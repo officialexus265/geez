@@ -47,6 +47,27 @@ export async function POST(request: NextRequest) {
         .select()
         .single();
 
+      // If linked to a goal, increase current_amount
+      if (tx && (tx as any).goal_id) {
+        const { data: goal } = await supabase
+          .from("goals")
+          .select("id, current_amount, target_amount")
+          .eq("id", (tx as any).goal_id)
+          .single();
+
+        if (goal) {
+          const newAmount = Number(goal.current_amount) + Number(tx.amount);
+          await supabase
+            .from("goals")
+            .update({
+              current_amount: newAmount,
+              is_completed: newAmount >= Number(goal.target_amount),
+              updated_at: new Date().toISOString(),
+            })
+            .eq("id", goal.id);
+        }
+      }
+
       // In-app notifications for both users
       const { data: profiles } = await supabase.from("profiles").select("id, email, full_name");
       if (profiles && tx) {
@@ -59,7 +80,6 @@ export async function POST(request: NextRequest) {
             metadata: { tx_ref, amount: tx.amount },
           });
           if (p.email) {
-            // Fire-and-forget email (uses SMTP helper)
             try {
               const { sendEmail } = await import("@/lib/notifications");
               await sendEmail({

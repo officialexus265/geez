@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">GEEZ</string>
+    <string name="title_activity_main">GEEZ</string>
+    <string name="package_name">com.geez.savings</string>
+    <string name="custom_url_scheme">com.geez.savings</string>
+</resources>

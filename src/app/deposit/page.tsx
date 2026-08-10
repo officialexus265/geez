@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
 import {
@@ -11,21 +11,96 @@ import {
 } from "lucide-react";
 import { formatMWK } from "@/lib/utils";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
+import { createClient } from "@/lib/supabase/client";
 
 const QUICK_AMOUNTS = [5000, 10000, 20000, 50000, 100000];
 
-// These will later come from Supabase profiles
-const DEPOSITORS = [
-  { id: "you", name: "You" },
-  { id: "partner", name: "Partner" },
-];
+interface ProfileOption {
+  id: string;
+  full_name: string;
+}
 
-export default function PublicDepositPage() {
+interface GoalOption {
+  id: string;
+  title: string;
+  emoji: string | null;
+}
+
+export default function DepositPage() {
   const [amount, setAmount] = useState("");
   const [note, setNote] = useState("");
-  const [depositor, setDepositor] = useState(DEPOSITORS[0].id);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [pageLoading, setPageLoading] = useState(true);
+
+  // Auth / profiles
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [currentUser, setCurrentUser] = useState<{
+    id: string;
+    full_name: string;
+    email: string;
+  } | null>(null);
+  const [profiles, setProfiles] = useState<ProfileOption[]>([]);
+  const [selectedDepositorId, setSelectedDepositorId] = useState<string>("");
+
+  // Goals
+  const [goals, setGoals] = useState<GoalOption[]>([]);
+  const [selectedGoalId, setSelectedGoalId] = useState<string>(""); // "" = General
+
+  useEffect(() => {
+    async function load() {
+      const supabase = createClient();
+
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      // Load all profiles (for public mode)
+      const { data: allProfiles } = await supabase
+        .from("profiles")
+        .select("id, full_name")
+        .order("created_at", { ascending: true });
+
+      if (allProfiles) {
+        setProfiles(allProfiles);
+      }
+
+      // Load goals
+      const { data: allGoals } = await supabase
+        .from("goals")
+        .select("id, title, emoji")
+        .eq("is_completed", false)
+        .order("created_at", { ascending: false });
+
+      if (allGoals) {
+        setGoals(allGoals);
+      }
+
+      if (user) {
+        setIsLoggedIn(true);
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("id, full_name, email")
+          .eq("id", user.id)
+          .single();
+
+        if (profile) {
+          setCurrentUser({
+            id: profile.id,
+            full_name: profile.full_name,
+            email: profile.email,
+          });
+          setSelectedDepositorId(profile.id);
+        }
+      } else if (allProfiles && allProfiles.length > 0) {
+        setSelectedDepositorId(allProfiles[0].id);
+      }
+
+      setPageLoading(false);
+    }
+
+    load();
+  }, []);
 
   async function handleDeposit(e: React.FormEvent) {
     e.preventDefault();
@@ -37,17 +112,39 @@ export default function PublicDepositPage() {
       return;
     }
 
+    let depositor_name = "Unknown";
+    let depositor_id: string | null = null;
+    let email: string | undefined;
+
+    if (isLoggedIn && currentUser) {
+      // Logged in → always use the current user
+      depositor_name = currentUser.full_name;
+      depositor_id = currentUser.id;
+      email = currentUser.email;
+    } else {
+      // Public contribution → use the selected profile
+      const selected = profiles.find((p) => p.id === selectedDepositorId);
+      if (!selected) {
+        setError("Please select who is contributing");
+        return;
+      }
+      depositor_name = selected.full_name;
+      depositor_id = selected.id;
+    }
+
     setLoading(true);
 
     try {
-      const selected = DEPOSITORS.find((d) => d.id === depositor);
       const res = await fetch("/api/paychangu/initiate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           amount: num,
           note: note || undefined,
-          depositor_name: selected?.name || "Unknown",
+          depositor_name,
+          depositor_id,
+          email,
+          goal_id: selectedGoalId || null,
         }),
       });
 
@@ -57,11 +154,20 @@ export default function PublicDepositPage() {
         throw new Error(data.error || "Failed to initiate payment");
       }
 
+      // Redirect to PayChangu checkout
       window.location.href = data.checkout_url;
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong");
       setLoading(false);
     }
+  }
+
+  if (pageLoading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    );
   }
 
   return (
@@ -81,15 +187,19 @@ export default function PublicDepositPage() {
           animate={{ opacity: 1, y: 0 }}
           className="mb-8 text-center"
         >
-          <Link href="/" className="inline-flex items-center gap-2 mb-4">
+          <Link href={isLoggedIn ? "/dashboard" : "/"} className="inline-flex items-center gap-2 mb-4">
             <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-lg">
               <Heart className="h-5 w-5 fill-current" />
             </div>
             <span className="text-xl font-bold">GEEZ</span>
           </Link>
-          <h1 className="text-2xl font-bold tracking-tight">Public Deposit</h1>
+          <h1 className="text-2xl font-bold tracking-tight">
+            {isLoggedIn ? "Make a Deposit" : "Public Contribution"}
+          </h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Contribute to our shared savings
+            {isLoggedIn
+              ? "Add money to your shared savings"
+              : "Contribute to our shared savings"}
           </p>
         </motion.div>
 
@@ -101,19 +211,56 @@ export default function PublicDepositPage() {
           className="space-y-5"
         >
           {/* Who is depositing */}
+          {isLoggedIn && currentUser ? (
+            <div className="rounded-2xl border border-border bg-card p-4">
+              <label className="mb-1.5 block text-sm font-medium">
+                Contributing as
+              </label>
+              <div className="rounded-xl bg-muted/50 px-3 py-3 text-sm font-medium">
+                {currentUser.full_name}
+              </div>
+            </div>
+          ) : (
+            <div className="rounded-2xl border border-border bg-card p-4">
+              <label className="mb-1.5 block text-sm font-medium">
+                Who is contributing?
+              </label>
+              <div className="relative">
+                <select
+                  value={selectedDepositorId}
+                  onChange={(e) => setSelectedDepositorId(e.target.value)}
+                  className="w-full appearance-none rounded-xl border border-input bg-background px-3 py-3 pr-10 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+                >
+                  {profiles.length === 0 && (
+                    <option value="">No users found</option>
+                  )}
+                  {profiles.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.full_name}
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              </div>
+            </div>
+          )}
+
+          {/* Goal selection */}
           <div className="rounded-2xl border border-border bg-card p-4">
             <label className="mb-1.5 block text-sm font-medium">
-              Who is depositing?
+              Contribute to
             </label>
             <div className="relative">
               <select
-                value={depositor}
-                onChange={(e) => setDepositor(e.target.value)}
+                value={selectedGoalId}
+                onChange={(e) => setSelectedGoalId(e.target.value)}
                 className="w-full appearance-none rounded-xl border border-input bg-background px-3 py-3 pr-10 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
               >
-                {DEPOSITORS.map((d) => (
-                  <option key={d.id} value={d.id}>
-                    {d.name}
+                <option value="">General savings (no specific goal)</option>
+                {goals.map((g) => (
+                  <option key={g.id} value={g.id}>
+                    {g.emoji ? `${g.emoji} ` : ""}
+                    {g.title}
                   </option>
                 ))}
               </select>
@@ -196,12 +343,17 @@ export default function PublicDepositPage() {
           </button>
         </motion.form>
 
-        <p className="mt-8 text-center text-xs text-muted-foreground">
-          Already have an account?{" "}
-          <Link href="/login" className="font-medium text-primary hover:underline">
-            Sign in
-          </Link>
-        </p>
+        {!isLoggedIn && (
+          <p className="mt-8 text-center text-xs text-muted-foreground">
+            Already have an account?{" "}
+            <Link
+              href="/login"
+              className="font-medium text-primary hover:underline"
+            >
+              Sign in
+            </Link>
+          </p>
+        )}
       </main>
     </div>
   );

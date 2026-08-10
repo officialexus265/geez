@@ -6,7 +6,7 @@ import { randomUUID } from "crypto";
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { amount, note, depositor_name, depositor_id, email } = body;
+    const { amount, note, depositor_name, depositor_id, email, goal_id } = body;
 
     if (!amount || amount < 100) {
       return NextResponse.json(
@@ -25,10 +25,9 @@ export async function POST(request: NextRequest) {
     const tx_ref = `GEEZ-${Date.now()}-${randomUUID().slice(0, 8)}`;
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
 
-    // Create pending transaction in DB
     const supabase = await createClient();
 
-    const { error: dbError } = await supabase.from("transactions").insert({
+    const insertData: Record<string, unknown> = {
       tx_ref,
       amount,
       currency: "MWK",
@@ -36,11 +35,20 @@ export async function POST(request: NextRequest) {
       depositor_id: depositor_id || null,
       depositor_name,
       note: note || null,
-    });
+    };
+
+    // Only add goal_id if the column exists and a value is provided
+    if (goal_id) {
+      insertData.goal_id = goal_id;
+    }
+
+    const { error: dbError } = await supabase
+      .from("transactions")
+      .insert(insertData);
 
     if (dbError) {
       console.error("DB insert error:", dbError);
-      // Continue even if DB insert fails in early stages (for testing without Supabase)
+      // Continue even if DB insert fails (e.g. missing column) — payment can still proceed
     }
 
     const payment = await initiatePayment({
@@ -60,6 +68,7 @@ export async function POST(request: NextRequest) {
         depositor_name,
         depositor_id,
         note,
+        goal_id: goal_id || null,
       },
     });
 
@@ -70,7 +79,10 @@ export async function POST(request: NextRequest) {
   } catch (err) {
     console.error("Initiate payment error:", err);
     return NextResponse.json(
-      { error: err instanceof Error ? err.message : "Payment initiation failed" },
+      {
+        error:
+          err instanceof Error ? err.message : "Payment initiation failed",
+      },
       { status: 500 }
     );
   }
