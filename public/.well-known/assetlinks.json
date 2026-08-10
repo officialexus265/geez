@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.geez.savings",
+      "sha256_cert_fingerprints": [
+        "D3:E6:6E:21:D0:8E:07:E1:7E:C3:D2:32:7B:A0:3B:D8:08:17:E4:D4:0C:31:61:C9:EE:48:D8:ED:1B:0F:77:B6"
+      ]
+    }
+  }
+]
