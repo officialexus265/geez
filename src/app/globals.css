@@ -1,0 +1,177 @@
+@import "tailwindcss";
+
+/* ============================================
+   GEEZ Design System
+   Dark Mode  : Deep Romantic Red + Charcoal + Silver
+   Light Mode : Army Green + Soft Charcoal + White
+   ============================================ */
+
+:root {
+  /* Light mode (default) */
+  --background: #f7f8f6;
+  --foreground: #1a1f1c;
+  --card: #ffffff;
+  --card-foreground: #1a1f1c;
+  --popover: #ffffff;
+  --popover-foreground: #1a1f1c;
+
+  --primary: #4a6741; /* Army Green */
+  --primary-foreground: #ffffff;
+  --primary-hover: #3d5636;
+
+  --secondary: #2d3430; /* Charcoal */
+  --secondary-foreground: #f0f2ef;
+
+  --muted: #e8ebe6;
+  --muted-foreground: #5c665e;
+
+  --accent: #d4e0d0;
+  --accent-foreground: #1a1f1c;
+
+  --destructive: #b91c1c;
+  --destructive-foreground: #ffffff;
+
+  --border: #d1d7cd;
+  --input: #d1d7cd;
+  --ring: #4a6741;
+
+  --success: #2f6b3a;
+  --warning: #b45309;
+  --love: #c45c6a; /* Soft romantic accent */
+
+  --radius: 0.875rem;
+  --radius-lg: 1.25rem;
+}
+
+.dark {
+  --background: #121416; /* Deep Charcoal */
+  --foreground: #e8e6e3; /* Soft Silver */
+  --card: #1c1f22;
+  --card-foreground: #e8e6e3;
+  --popover: #1c1f22;
+  --popover-foreground: #e8e6e3;
+
+  --primary: #9b2335; /* Deep Romantic Red */
+  --primary-foreground: #ffffff;
+  --primary-hover: #7f1d2c;
+
+  --secondary: #2a2e32;
+  --secondary-foreground: #c9c5c0;
+
+  --muted: #25292d;
+  --muted-foreground: #9a9691;
+
+  --accent: #2f1a1e;
+  --accent-foreground: #e8e6e3;
+
+  --destructive: #ef4444;
+  --destructive-foreground: #ffffff;
+
+  --border: #2e3338;
+  --input: #2e3338;
+  --ring: #9b2335;
+
+  --success: #22c55e;
+  --warning: #f59e0b;
+  --love: #e8798a;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary-hover: var(--primary-hover);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-love: var(--love);
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: var(--radius);
+  --radius-lg: var(--radius-lg);
+  --radius-xl: calc(var(--radius-lg) + 4px);
+
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+/* Base styles */
+* {
+  border-color: var(--border);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans), system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Smooth theme transitions */
+html {
+  transition: background-color 0.35s ease, color 0.35s ease;
+}
+
+html.dark body,
+html body {
+  transition: background-color 0.35s ease, color 0.35s ease;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--muted-foreground);
+  border-radius: 999px;
+  opacity: 0.4;
+}
+::-webkit-scrollbar-thumb:hover {
+  opacity: 0.7;
+}
+
+/* Selection */
+::selection {
+  background: color-mix(in srgb, var(--primary) 30%, transparent);
+  color: var(--foreground);
+}
+
+/* Utility for love accent */
+.text-love {
+  color: var(--love);
+}
+.bg-love {
+  background-color: var(--love);
+}
+.border-love {
+  border-color: var(--love);
+}
+
+/* Focus ring utility */
+.focus-ring {
+  outline: none;
+}
+.focus-ring:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
