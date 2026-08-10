@@ -14,7 +14,7 @@ export async function middleware(request: NextRequest) {
         getAll() {
           return request.cookies.getAll();
         },
-        setAll(cookiesToSet) {
+        setAll(cookiesToSet: { name: string; value: string; options?: any }[]) {
           cookiesToSet.forEach(({ name, value }) =>
             request.cookies.set(name, value)
           );
@@ -41,7 +41,8 @@ export async function middleware(request: NextRequest) {
     path.startsWith("/goals") ||
     path.startsWith("/withdraw") ||
     path.startsWith("/profile") ||
-    path.startsWith("/settings");
+    path.startsWith("/settings") ||
+    path.startsWith("/receipt");
 
   const isAuthRoute = path.startsWith("/login") || path.startsWith("/register");
 
@@ -69,6 +70,7 @@ export const config = {
     "/withdraw/:path*",
     "/profile/:path*",
     "/settings/:path*",
+    "/receipt/:path*",
     "/login",
     "/register",
   ],
