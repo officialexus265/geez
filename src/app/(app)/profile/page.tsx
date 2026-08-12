@@ -12,6 +12,12 @@ import {
   Save,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
+import {
+  canUseBiometrics,
+  isBiometricsEnabled,
+  setBiometricsEnabled,
+  promptBiometrics,
+} from "@/lib/biometrics";
 import { useRouter } from "next/navigation";
 
 export default function ProfilePage() {
@@ -27,6 +33,8 @@ export default function ProfilePage() {
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [bioOn, setBioOn] = useState(false);
+  const [bioSupported, setBioSupported] = useState(false);
 
   useEffect(() => {
     async function load() {
@@ -53,6 +61,8 @@ export default function ProfilePage() {
         setAvatarUrl(profile.avatar_url || null);
       }
       setLoading(false);
+      setBioOn(isBiometricsEnabled());
+      canUseBiometrics().then(setBioSupported);
     }
     load();
   }, [router]);
@@ -268,7 +278,35 @@ export default function ProfilePage() {
       >
         Goals
       </a>
-      <a
+      
+      {bioSupported && (
+        <button
+          type="button"
+          onClick={async () => {
+            if (!bioOn) {
+              const ok = await promptBiometrics("Enable biometric login for GEEZ");
+              if (!ok) {
+                setError("Biometric verification failed");
+                return;
+              }
+              setBiometricsEnabled(true);
+              setBioOn(true);
+              setMessage("Biometric login enabled");
+            } else {
+              setBiometricsEnabled(false);
+              setBioOn(false);
+              setMessage("Biometric login disabled");
+            }
+          }}
+          className="flex w-full items-center justify-between rounded-2xl border border-border bg-card px-4 py-3.5 text-sm font-medium transition hover:bg-muted"
+        >
+          <span>Unlock with fingerprint / face</span>
+          <span className={bioOn ? "text-success" : "text-muted-foreground"}>
+            {bioOn ? "On" : "Off"}
+          </span>
+        </button>
+      )}
+<a
         href="/about"
         className="flex w-full items-center justify-center gap-2 rounded-2xl border border-border bg-card py-3.5 text-sm font-medium transition hover:bg-muted"
       >

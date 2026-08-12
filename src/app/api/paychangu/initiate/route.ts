@@ -23,7 +23,13 @@ export async function POST(request: NextRequest) {
     }
 
     const tx_ref = `GEEZ-${Date.now()}-${randomUUID().slice(0, 8)}`;
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
+    const appUrl = (
+      process.env.NEXT_PUBLIC_APP_URL ||
+      "https://geez-lac.vercel.app"
+    ).replace(/\/$/, "");
+    if (!appUrl.startsWith("http")) {
+      throw new Error("NEXT_PUBLIC_APP_URL must be a valid http(s) URL");
+    }
 
     const supabase = await createClient();
 
@@ -59,10 +65,8 @@ export async function POST(request: NextRequest) {
       last_name: depositor_name.split(" ").slice(1).join(" ") || undefined,
       tx_ref,
       callback_url: `${appUrl}/api/paychangu/webhook`,
-      return_url:
-        platform === "native"
-          ? `geez://deposit/return?tx_ref=${encodeURIComponent(tx_ref)}`
-          : `${appUrl}/deposit/return?tx_ref=${encodeURIComponent(tx_ref)}`,
+      // PayChangu only accepts http(s) return URLs — never custom schemes
+      return_url: `${appUrl.replace(/\/$/, "")}/deposit/return?tx_ref=${encodeURIComponent(tx_ref)}`,
       customization: {
         title: "GEEZ Savings",
         description: note || "Shared savings deposit",

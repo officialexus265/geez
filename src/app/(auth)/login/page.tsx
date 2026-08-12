@@ -1,11 +1,16 @@
 "use client";
 
-import { useState, Suspense } from "react";
+import { useState, Suspense, useEffect } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { motion } from "framer-motion";
 import { Heart, Mail, Lock, Loader2, Eye, EyeOff } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
+import {
+  canUseBiometrics,
+  isBiometricsEnabled,
+  promptBiometrics,
+} from "@/lib/biometrics";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
 
 function LoginForm() {
@@ -18,6 +23,53 @@ function LoginForm() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [bioAvailable, setBioAvailable] = useState(false);
+  const [bioLoading, setBioLoading] = useState(false);
+
+  useEffect(() => {
+    (async () => {
+      if (!isBiometricsEnabled()) return;
+      const ok = await canUseBiometrics();
+      setBioAvailable(ok);
+      if (!ok) return;
+      // Auto-prompt once if session may exist
+      const supabase = createClient();
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session) {
+        setBioLoading(true);
+        const passed = await promptBiometrics("Unlock GEEZ");
+        setBioLoading(false);
+        if (passed) {
+          router.push(redirect);
+          router.refresh();
+        }
+      }
+    })();
+  }, [redirect, router]);
+
+  async function handleBiometricLogin() {
+    setBioLoading(true);
+    setError(null);
+    try {
+      const passed = await promptBiometrics("Unlock GEEZ");
+      if (!passed) {
+        setError("Biometric authentication failed or cancelled");
+        return;
+      }
+      const supabase = createClient();
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        setError("No saved session. Sign in with email once, then enable biometrics in Profile.");
+        return;
+      }
+      router.push(redirect);
+      router.refresh();
+    } catch (e) {
+      setError("Biometric login failed");
+    } finally {
+      setBioLoading(false);
+    }
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -149,7 +201,17 @@ function LoginForm() {
           </form>
 
           <p className="mt-6 text-center text-sm text-muted-foreground">
-            Don&apos;t have an account?{" "}
+            {bioAvailable && (
+            <button
+              type="button"
+              onClick={handleBiometricLogin}
+              disabled={bioLoading}
+              className="mb-4 flex w-full items-center justify-center gap-2 rounded-2xl border border-border bg-card py-3.5 text-sm font-medium transition hover:bg-muted disabled:opacity-60"
+            >
+              {bioLoading ? "Checking…" : "Unlock with fingerprint / face"}
+            </button>
+          )}
+          Don&apos;t have an account?{" "}
             <Link href="/register" className="font-medium text-primary hover:underline">
               Create one
             </Link>
