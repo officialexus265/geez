@@ -48,9 +48,40 @@ export default function DashboardPage() {
   const [userName, setUserName] = useState<string | null>(null);
 
   useEffect(() => {
+    const supabase = createClient();
+    let userId: string | null = null;
+    const channels: ReturnType<typeof supabase.channel>[] = [];
+
+    async function refreshMoney() {
+      if (!userId) return;
+      const { data: txs } = await supabase
+        .from("transactions")
+        .select("id, amount, depositor_id, depositor_name, status, created_at, note")
+        .eq("status", "success")
+        .order("created_at", { ascending: false });
+
+      if (txs) {
+        const total = txs.reduce((s, t) => s + Number(t.amount), 0);
+        const yours = txs
+          .filter((t) => t.depositor_id === userId)
+          .reduce((s, t) => s + Number(t.amount), 0);
+        setSummary({ total, yours, partner: total - yours });
+        setRecent(txs.slice(0, 5));
+      }
+    }
+
+    async function refreshGoals() {
+      const { data: goalsData } = await supabase
+        .from("goals")
+        .select("id, title, target_amount, current_amount, emoji")
+        .eq("is_completed", false)
+        .order("created_at", { ascending: false })
+        .limit(3);
+      if (goalsData) setGoals(goalsData);
+    }
+
     async function load() {
       try {
-        const supabase = createClient();
         const {
           data: { user },
         } = await supabase.auth.getUser();
@@ -59,8 +90,8 @@ export default function DashboardPage() {
           setLoading(false);
           return;
         }
+        userId = user.id;
 
-        // Profile
         const { data: profile } = await supabase
           .from("profiles")
           .select("full_name")
@@ -68,37 +99,45 @@ export default function DashboardPage() {
           .single();
         if (profile) setUserName(profile.full_name);
 
-        // Successful deposits
-        const { data: txs } = await supabase
-          .from("transactions")
-          .select("id, amount, depositor_id, depositor_name, status, created_at, note")
-          .eq("status", "success")
-          .order("created_at", { ascending: false });
+        await refreshMoney();
+        await refreshGoals();
 
-        if (txs) {
-          const total = txs.reduce((s, t) => s + Number(t.amount), 0);
-          const yours = txs
-            .filter((t) => t.depositor_id === user.id)
-            .reduce((s, t) => s + Number(t.amount), 0);
-          setSummary({ total, yours, partner: total - yours });
-          setRecent(txs.slice(0, 5));
-        }
+        // Live updates when partner deposits or status changes
+        const txChannel = supabase
+          .channel("dashboard-transactions")
+          .on(
+            "postgres_changes",
+            { event: "*", schema: "public", table: "transactions" },
+            () => {
+              refreshMoney();
+            }
+          )
+          .subscribe();
+        channels.push(txChannel);
 
-        // Goals
-        const { data: goalsData } = await supabase
-          .from("goals")
-          .select("id, title, target_amount, current_amount, emoji")
-          .eq("is_completed", false)
-          .order("created_at", { ascending: false })
-          .limit(3);
-        if (goalsData) setGoals(goalsData);
+        const goalsChannel = supabase
+          .channel("dashboard-goals")
+          .on(
+            "postgres_changes",
+            { event: "*", schema: "public", table: "goals" },
+            () => {
+              refreshGoals();
+            }
+          )
+          .subscribe();
+        channels.push(goalsChannel);
       } catch (err) {
         console.error("Dashboard load error:", err);
       } finally {
         setLoading(false);
       }
     }
+
     load();
+
+    return () => {
+      channels.forEach((ch) => supabase.removeChannel(ch));
+    };
   }, []);
 
   if (loading) {

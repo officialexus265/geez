@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { ThemeProvider } from "@/components/providers/theme-provider";
+import { HideBalanceProvider } from "@/components/providers/hide-balance-provider";
 import { SplashScreen } from "@/components/splash-screen";
 import { DeepLinkHandler } from "@/components/deep-link-handler";
 import "./globals.css";
@@ -70,7 +71,7 @@ export default function RootLayout({
         >
           <SplashScreen />
           <DeepLinkHandler />
-          {children}
+          <HideBalanceProvider>{children}</HideBalanceProvider>
         </ThemeProvider>
         <script
           dangerouslySetInnerHTML={{
