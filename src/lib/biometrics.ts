@@ -1,12 +1,31 @@
 /**
- * Biometric unlock helpers (Fingerprint / Face ID).
- * Works in the Capacitor APK. On web, falls back gracefully.
+ * Biometric unlock (Fingerprint / Face ID) for the Capacitor APK.
+ * Uses Function-based dynamic import so TypeScript does not require
+ * the native package at Vercel build time.
  */
+
+const FLAG = "geez-biometrics-enabled";
+
+async function loadNativeBiometric(): Promise<any | null> {
+  try {
+    // Avoid static analysis: do not use a string literal import path TS can resolve
+    const importer = new Function(
+      "return import('@capgo/capacitor-native-biometric')"
+    ) as () => Promise<any>;
+    const mod = await importer();
+    return mod?.NativeBiometric ?? null;
+  } catch {
+    return null;
+  }
+}
 
 export async function isNative(): Promise<boolean> {
   try {
-    const { Capacitor } = await import("@capacitor/core");
-    return Capacitor.isNativePlatform();
+    const importer = new Function(
+      "return import('@capacitor/core')"
+    ) as () => Promise<any>;
+    const mod = await importer();
+    return !!mod?.Capacitor?.isNativePlatform?.();
   } catch {
     return false;
   }
@@ -15,21 +34,12 @@ export async function isNative(): Promise<boolean> {
 export async function canUseBiometrics(): Promise<boolean> {
   if (!(await isNative())) return false;
   try {
-    const { NativeBiometric } = await import(
-      "@capgo/capacitor-native-biometric"
-    );
+    const NativeBiometric = await loadNativeBiometric();
+    if (!NativeBiometric?.isAvailable) return false;
     const result = await NativeBiometric.isAvailable();
     return !!result?.isAvailable;
   } catch {
-    try {
-      // alternate package name some projects use
-      const mod = await import("@capacitor-community/biometric-auth");
-      const BiometricAuth = (mod as any).BiometricAuth || (mod as any).default;
-      const status = await BiometricAuth.checkBiometry();
-      return !!status?.isAvailable;
-    } catch {
-      return false;
-    }
+    return false;
   }
 }
 
@@ -37,9 +47,8 @@ export async function promptBiometrics(
   reason = "Unlock GEEZ"
 ): Promise<boolean> {
   try {
-    const { NativeBiometric } = await import(
-      "@capgo/capacitor-native-biometric"
-    );
+    const NativeBiometric = await loadNativeBiometric();
+    if (!NativeBiometric?.verifyIdentity) return false;
     await NativeBiometric.verifyIdentity({
       reason,
       title: "GEEZ",
@@ -48,22 +57,9 @@ export async function promptBiometrics(
     });
     return true;
   } catch {
-    try {
-      const mod = await import("@capacitor-community/biometric-auth");
-      const BiometricAuth = (mod as any).BiometricAuth || (mod as any).default;
-      await BiometricAuth.authenticate({
-        reason,
-        cancelTitle: "Cancel",
-        allowDeviceCredential: true,
-      });
-      return true;
-    } catch {
-      return false;
-    }
+    return false;
   }
 }
-
-const FLAG = "geez-biometrics-enabled";
 
 export function isBiometricsEnabled(): boolean {
   try {
@@ -76,5 +72,7 @@ export function isBiometricsEnabled(): boolean {
 export function setBiometricsEnabled(on: boolean) {
   try {
     localStorage.setItem(FLAG, on ? "1" : "0");
-  } catch {}
+  } catch {
+    // ignore
+  }
 }
