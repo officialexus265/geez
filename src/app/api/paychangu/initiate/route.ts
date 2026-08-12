@@ -66,7 +66,7 @@ export async function POST(request: NextRequest) {
       tx_ref,
       callback_url: `${appUrl}/api/paychangu/webhook`,
       // PayChangu only accepts http(s) return URLs — never custom schemes
-      return_url: `${appUrl.replace(/\/$/, "")}/deposit/return?tx_ref=${encodeURIComponent(tx_ref)}`,
+      return_url: `${appUrl.replace(/\/$/, "")}/api/paychangu/return?tx_ref=${encodeURIComponent(tx_ref)}`,
       customization: {
         title: "GEEZ Savings",
         description: note || "Shared savings deposit",
