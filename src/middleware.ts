@@ -42,7 +42,9 @@ export async function middleware(request: NextRequest) {
     path.startsWith("/withdraw") ||
     path.startsWith("/profile") ||
     path.startsWith("/settings") ||
-    path.startsWith("/receipt");
+    path.startsWith("/receipt") ||
+    path.startsWith("/about") ||
+    path.startsWith("/chat");
 
   const isAuthRoute = path.startsWith("/login") || path.startsWith("/register") || path.startsWith("/forgot-password") || path.startsWith("/reset-password");
 
@@ -71,6 +73,8 @@ export const config = {
     "/profile/:path*",
     "/settings/:path*",
     "/receipt/:path*",
+    "/about",
+    "/chat",
     "/login",
     "/register",
   ],

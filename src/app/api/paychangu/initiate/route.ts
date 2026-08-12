@@ -6,7 +6,7 @@ import { randomUUID } from "crypto";
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { amount, note, depositor_name, depositor_id, email, goal_id } = body;
+    const { amount, note, depositor_name, depositor_id, email, goal_id, platform } = body;
 
     if (!amount || amount < 100) {
       return NextResponse.json(
@@ -59,7 +59,10 @@ export async function POST(request: NextRequest) {
       last_name: depositor_name.split(" ").slice(1).join(" ") || undefined,
       tx_ref,
       callback_url: `${appUrl}/api/paychangu/webhook`,
-      return_url: `${appUrl}/deposit/return?tx_ref=${tx_ref}`,
+      return_url:
+        platform === "native"
+          ? `geez://deposit/return?tx_ref=${encodeURIComponent(tx_ref)}`
+          : `${appUrl}/deposit/return?tx_ref=${encodeURIComponent(tx_ref)}`,
       customization: {
         title: "GEEZ Savings",
         description: note || "Shared savings deposit",

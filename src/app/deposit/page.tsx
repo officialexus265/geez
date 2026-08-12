@@ -13,6 +13,7 @@ import {
 import { formatMWK } from "@/lib/utils";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
 import { createClient } from "@/lib/supabase/client";
+import { isNativeApp } from "@/lib/platform";
 
 const QUICK_AMOUNTS = [5000, 10000, 20000, 50000, 100000];
 
@@ -146,6 +147,7 @@ export default function DepositPage() {
           depositor_id,
           email,
           goal_id: selectedGoalId || null,
+          platform: isNativeApp() ? "native" : "web",
         }),
       });
 

@@ -269,6 +269,12 @@ export default function ProfilePage() {
         Goals
       </a>
       <a
+        href="/about"
+        className="flex w-full items-center justify-center gap-2 rounded-2xl border border-border bg-card py-3.5 text-sm font-medium transition hover:bg-muted"
+      >
+        About GEEZ
+      </a>
+      <a
         href="/settings"
         className="flex w-full items-center justify-center gap-2 rounded-2xl border border-border bg-card py-3.5 text-sm font-medium transition hover:bg-muted"
       >
