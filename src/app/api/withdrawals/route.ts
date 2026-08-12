@@ -84,6 +84,8 @@ export async function POST(request: NextRequest) {
     }
 
     // Notify partner
+    console.log(`[GEEZ] Withdrawal confirmation code for partner: ${code}`);
+
     const message = `GEEZ: ${me.full_name} requested a withdrawal of MWK ${amount}. Your confirmation code is ${code}. Valid for 15 minutes.`;
 
     if (partner.email) {

@@ -2,9 +2,17 @@
 
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
-import { History, ArrowDownLeft, ArrowUpRight, Loader2 } from "lucide-react";
+import {
+  History,
+  ArrowDownLeft,
+  ArrowUpRight,
+  Loader2,
+  Download,
+} from "lucide-react";
+import Link from "next/link";
 import { formatMWK, formatDate } from "@/lib/utils";
 import { createClient } from "@/lib/supabase/client";
+import { useHideBalance } from "@/hooks/use-hide-balance";
 
 type Filter = "all" | "deposit" | "withdrawal";
 
@@ -23,6 +31,7 @@ export default function HistoryPage() {
   const [filter, setFilter] = useState<Filter>("all");
   const [items, setItems] = useState<TxItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const { hidden } = useHideBalance();
 
   useEffect(() => {
     async function load() {
@@ -79,6 +88,31 @@ export default function HistoryPage() {
     load();
   }, []);
 
+  function exportCSV() {
+    const rows = [["Type", "Name", "Amount", "Status", "Date", "Note", "Reference"]];
+    items.forEach((tx) => {
+      rows.push([
+        tx.type,
+        tx.name,
+        String(tx.amount),
+        tx.status,
+        tx.created_at,
+        tx.note || "",
+        tx.tx_ref || "",
+      ]);
+    });
+    const csv = rows
+      .map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(","))
+      .join("\n");
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `geez-history-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
   const filtered =
     filter === "all" ? items : items.filter((t) => t.type === filter);
 
@@ -92,11 +126,22 @@ export default function HistoryPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">History</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          All deposits and withdrawals
-        </p>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">History</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            All deposits and withdrawals
+          </p>
+        </div>
+        {items.length > 0 && (
+          <button
+            onClick={exportCSV}
+            className="flex items-center gap-1.5 rounded-full border border-border bg-card px-3 py-2 text-xs font-medium hover:bg-muted"
+          >
+            <Download className="h-3.5 w-3.5" />
+            CSV
+          </button>
+        )}
       </div>
 
       <div className="flex gap-2">
@@ -167,11 +212,19 @@ export default function HistoryPage() {
                   }`}
                 >
                   {tx.type === "deposit" ? "+" : "-"}
-                  {formatMWK(tx.amount)}
+                  {hidden ? "•••" : formatMWK(tx.amount)}
                 </p>
                 <p className="text-[10px] capitalize text-muted-foreground">
                   {tx.status.replace("_", " ")}
                 </p>
+                {tx.type === "deposit" && tx.status === "success" && (
+                  <Link
+                    href={`/receipt/${tx.id}`}
+                    className="text-[10px] text-primary hover:underline"
+                  >
+                    Receipt
+                  </Link>
+                )}
               </div>
             </motion.div>
           ))}

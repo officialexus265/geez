@@ -8,6 +8,7 @@ import {
   Loader2,
   Heart,
   ChevronDown,
+  ArrowLeft,
 } from "lucide-react";
 import { formatMWK } from "@/lib/utils";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
@@ -172,6 +173,14 @@ export default function DepositPage() {
 
   return (
     <div className="min-h-screen bg-background">
+      <div className="absolute top-4 left-4 z-20">
+        <Link
+          href="/dashboard"
+          className="flex h-10 w-10 items-center justify-center rounded-full border border-border bg-card text-foreground transition hover:bg-muted"
+        >
+          <ArrowLeft className="h-5 w-5" />
+        </Link>
+      </div>
       <div className="absolute top-4 right-4 z-20">
         <ThemeToggle />
       </div>

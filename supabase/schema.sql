@@ -243,3 +243,53 @@ create policy "Settings updatable by authenticated"
 alter table public.app_settings
   add column if not exists app_icon_url text,
   add column if not exists splash_url text;
+
+-- ============================================
+-- MESSAGES (Chat)
+-- ============================================
+create table if not exists public.messages (
+  id uuid primary key default uuid_generate_v4(),
+  user_id uuid not null references public.profiles(id) on delete cascade,
+  body text not null,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists messages_created_at_idx on public.messages(created_at);
+
+alter table public.messages enable row level security;
+
+create policy "Authenticated users can read messages"
+  on public.messages for select
+  to authenticated
+  using (true);
+
+create policy "Users can insert own messages"
+  on public.messages for insert
+  to authenticated
+  with check (auth.uid() = user_id);
+
+-- Allow admins to delete for reset (broad delete for authenticated — tighten later if needed)
+create policy "Authenticated can delete transactions for reset"
+  on public.transactions for delete
+  to authenticated
+  using (true);
+
+create policy "Authenticated can delete withdrawals for reset"
+  on public.withdrawals for delete
+  to authenticated
+  using (true);
+
+create policy "Authenticated can delete goals"
+  on public.goals for delete
+  to authenticated
+  using (true);
+
+create policy "Authenticated can delete notifications"
+  on public.notifications for delete
+  to authenticated
+  using (true);
+
+create policy "Authenticated can delete messages"
+  on public.messages for delete
+  to authenticated
+  using (true);

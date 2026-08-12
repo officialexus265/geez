@@ -1,25 +1,88 @@
+"use client";
+
 import { BottomNav } from "@/components/layout/bottom-nav";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
 import Link from "next/link";
-import { Heart } from "lucide-react";
+import { Heart, WifiOff, Eye, EyeOff, RefreshCw } from "lucide-react";
+import { useOnline } from "@/hooks/use-online";
+import { useHideBalance } from "@/hooks/use-hide-balance";
+import { useEffect, useState } from "react";
+import { createClient } from "@/lib/supabase/client";
+import { useRouter, usePathname } from "next/navigation";
 
-export default function AppLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export default function AppLayout({ children }: { children: React.ReactNode }) {
+  const online = useOnline();
+  const { hidden, toggle } = useHideBalance();
+  const [logoUrl, setLogoUrl] = useState<string | null>(null);
+  const router = useRouter();
+  const pathname = usePathname();
+
+  useEffect(() => {
+    async function loadLogo() {
+      try {
+        const supabase = createClient();
+        const { data } = await supabase
+          .from("app_settings")
+          .select("logo_url")
+          .eq("id", "main")
+          .single();
+        if (data?.logo_url) setLogoUrl(data.logo_url);
+      } catch {}
+    }
+    loadLogo();
+  }, []);
+
+  function handleRefresh() {
+    router.refresh();
+    window.location.reload();
+  }
+
   return (
     <div className="min-h-screen bg-background pb-24">
+      {/* Offline banner */}
+      {!online && (
+        <div className="sticky top-0 z-50 flex items-center justify-center gap-2 bg-warning px-4 py-2 text-sm font-medium text-white">
+          <WifiOff className="h-4 w-4" />
+          You&apos;re offline — some features may not work
+        </div>
+      )}
+
       {/* Top bar */}
       <header className="sticky top-0 z-40 border-b border-border bg-card/80 backdrop-blur-lg">
         <div className="mx-auto flex h-14 max-w-lg items-center justify-between px-4">
           <Link href="/dashboard" className="flex items-center gap-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-primary text-primary-foreground">
-              <Heart className="h-4 w-4 fill-current" />
-            </div>
+            {logoUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={logoUrl}
+                alt="GEEZ"
+                className="h-8 w-8 rounded-xl object-contain"
+              />
+            ) : (
+              <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-primary text-primary-foreground">
+                <Heart className="h-4 w-4 fill-current" />
+              </div>
+            )}
             <span className="text-lg font-bold tracking-tight">GEEZ</span>
           </Link>
-          <ThemeToggle />
+
+          <div className="flex items-center gap-1">
+            <button
+              onClick={toggle}
+              className="flex h-9 w-9 items-center justify-center rounded-full border border-border bg-card text-foreground transition hover:bg-muted"
+              title={hidden ? "Show balance" : "Hide balance"}
+            >
+              {hidden ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+            </button>
+            <button
+              onClick={handleRefresh}
+              className="flex h-9 w-9 items-center justify-center rounded-full border border-border bg-card text-foreground transition hover:bg-muted"
+              title="Refresh"
+            >
+              <RefreshCw className="h-4 w-4" />
+            </button>
+            <ThemeToggle />
+          </div>
         </div>
       </header>
 

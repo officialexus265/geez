@@ -13,6 +13,7 @@ import {
   Loader2,
 } from "lucide-react";
 import { formatMWK, formatDate } from "@/lib/utils";
+import { useHideBalance } from "@/hooks/use-hide-balance";
 import { createClient } from "@/lib/supabase/client";
 
 interface Summary {
@@ -39,6 +40,7 @@ interface GoalPreview {
 }
 
 export default function DashboardPage() {
+  const { hidden } = useHideBalance();
   const [summary, setSummary] = useState<Summary>({ total: 0, yours: 0, partner: 0 });
   const [recent, setRecent] = useState<RecentTx[]>([]);
   const [goals, setGoals] = useState<GoalPreview[]>([]);
@@ -133,7 +135,7 @@ export default function DashboardPage() {
         <div className="relative">
           <p className="text-sm font-medium opacity-90">Total Contributed</p>
           <h1 className="mt-1 text-4xl font-bold tracking-tight">
-            {formatMWK(summary.total)}
+            {hidden ? "••••••" : formatMWK(summary.total)}
           </h1>
 
           <div className="mt-6 flex gap-3">
@@ -164,11 +166,11 @@ export default function DashboardPage() {
       >
         <div className="rounded-2xl border border-border bg-card p-4">
           <p className="text-xs text-muted-foreground">You</p>
-          <p className="mt-1 text-xl font-bold">{formatMWK(summary.yours)}</p>
+          <p className="mt-1 text-xl font-bold">{hidden ? "••••" : formatMWK(summary.yours)}</p>
         </div>
         <div className="rounded-2xl border border-border bg-card p-4">
           <p className="text-xs text-muted-foreground">Partner</p>
-          <p className="mt-1 text-xl font-bold">{formatMWK(summary.partner)}</p>
+          <p className="mt-1 text-xl font-bold">{hidden ? "••••" : formatMWK(summary.partner)}</p>
         </div>
       </motion.section>
 
@@ -273,7 +275,7 @@ export default function DashboardPage() {
                   </p>
                 </div>
                 <p className="text-sm font-semibold text-success">
-                  +{formatMWK(Number(tx.amount))}
+                  {hidden ? "+•••" : `+${formatMWK(Number(tx.amount))}`}
                 </p>
               </div>
             ))}

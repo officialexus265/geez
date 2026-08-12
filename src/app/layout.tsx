@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { ThemeProvider } from "@/components/providers/theme-provider";
+import { SplashScreen } from "@/components/splash-screen";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -66,6 +67,7 @@ export default function RootLayout({
           enableSystem
           disableTransitionOnChange={false}
         >
+          <SplashScreen />
           {children}
         </ThemeProvider>
         <script

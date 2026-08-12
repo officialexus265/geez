@@ -2,9 +2,10 @@
 
 import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Target, Plus, X, Loader2 } from "lucide-react";
+import { Target, Plus, X, Loader2, Pencil, Trash2 } from "lucide-react";
 import { formatMWK } from "@/lib/utils";
 import { createClient } from "@/lib/supabase/client";
+import { useHideBalance } from "@/hooks/use-hide-balance";
 
 interface Goal {
   id: string;
@@ -20,11 +21,13 @@ export default function GoalsPage() {
   const [goals, setGoals] = useState<Goal[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
+  const [editing, setEditing] = useState<Goal | null>(null);
   const [title, setTitle] = useState("");
   const [target, setTarget] = useState("");
   const [emoji, setEmoji] = useState("🎯");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { hidden } = useHideBalance();
 
   async function loadGoals() {
     try {
@@ -46,7 +49,25 @@ export default function GoalsPage() {
     loadGoals();
   }, []);
 
-  async function handleCreate(e: React.FormEvent) {
+  function openCreate() {
+    setEditing(null);
+    setTitle("");
+    setTarget("");
+    setEmoji("🎯");
+    setError(null);
+    setShowForm(true);
+  }
+
+  function openEdit(goal: Goal) {
+    setEditing(goal);
+    setTitle(goal.title);
+    setTarget(String(goal.target_amount));
+    setEmoji(goal.emoji || "🎯");
+    setError(null);
+    setShowForm(true);
+  }
+
+  async function handleSave(e: React.FormEvent) {
     e.preventDefault();
     if (!title.trim() || !target) return;
 
@@ -60,29 +81,53 @@ export default function GoalsPage() {
       } = await supabase.auth.getUser();
       if (!user) throw new Error("Not authenticated");
 
-      const { data, error } = await supabase
-        .from("goals")
-        .insert({
-          title: title.trim(),
-          target_amount: Number(target),
-          current_amount: 0,
-          emoji,
-          created_by: user.id,
-        })
-        .select()
-        .single();
+      if (editing) {
+        const { data, error } = await supabase
+          .from("goals")
+          .update({
+            title: title.trim(),
+            target_amount: Number(target),
+            emoji,
+          })
+          .eq("id", editing.id)
+          .select()
+          .single();
+        if (error) throw error;
+        setGoals((prev) => prev.map((g) => (g.id === editing.id ? data : g)));
+      } else {
+        const { data, error } = await supabase
+          .from("goals")
+          .insert({
+            title: title.trim(),
+            target_amount: Number(target),
+            current_amount: 0,
+            emoji,
+            created_by: user.id,
+          })
+          .select()
+          .single();
+        if (error) throw error;
+        setGoals((prev) => [data, ...prev]);
+      }
 
-      if (error) throw error;
-
-      setGoals((prev) => [data, ...prev]);
-      setTitle("");
-      setTarget("");
-      setEmoji("🎯");
       setShowForm(false);
+      setEditing(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to create goal");
+      setError(err instanceof Error ? err.message : "Failed to save goal");
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function handleDelete(id: string) {
+    if (!confirm("Delete this goal?")) return;
+    try {
+      const supabase = createClient();
+      const { error } = await supabase.from("goals").delete().eq("id", id);
+      if (error) throw error;
+      setGoals((prev) => prev.filter((g) => g.id !== id));
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Failed to delete");
     }
   }
 
@@ -104,7 +149,7 @@ export default function GoalsPage() {
           </p>
         </div>
         <button
-          onClick={() => setShowForm(true)}
+          onClick={openCreate}
           className="flex h-10 items-center gap-1.5 rounded-full bg-primary px-4 text-sm font-medium text-primary-foreground transition hover:bg-primary-hover"
         >
           <Plus className="h-4 w-4" />
@@ -129,7 +174,9 @@ export default function GoalsPage() {
               className="w-full max-w-md rounded-3xl border border-border bg-card p-6 shadow-2xl"
             >
               <div className="mb-5 flex items-center justify-between">
-                <h2 className="text-lg font-semibold">New Goal</h2>
+                <h2 className="text-lg font-semibold">
+                  {editing ? "Edit Goal" : "New Goal"}
+                </h2>
                 <button
                   onClick={() => setShowForm(false)}
                   className="rounded-full p-1.5 hover:bg-muted"
@@ -138,7 +185,7 @@ export default function GoalsPage() {
                 </button>
               </div>
 
-              <form onSubmit={handleCreate} className="space-y-4">
+              <form onSubmit={handleSave} className="space-y-4">
                 <div>
                   <label className="mb-1.5 block text-sm font-medium">Emoji</label>
                   <div className="flex flex-wrap gap-2">
@@ -198,7 +245,13 @@ export default function GoalsPage() {
                   disabled={saving}
                   className="flex w-full items-center justify-center gap-2 rounded-2xl bg-primary py-3.5 text-sm font-semibold text-primary-foreground disabled:opacity-60"
                 >
-                  {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : "Create Goal"}
+                  {saving ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : editing ? (
+                    "Save changes"
+                  ) : (
+                    "Create Goal"
+                  )}
                 </button>
               </form>
             </motion.div>
@@ -239,13 +292,28 @@ export default function GoalsPage() {
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center justify-between gap-2">
                       <h3 className="truncate font-semibold">{goal.title}</h3>
-                      <span className="text-xs font-medium text-muted-foreground">
-                        {Math.round(progress)}%
-                      </span>
+                      <div className="flex items-center gap-1">
+                        <span className="text-xs font-medium text-muted-foreground">
+                          {Math.round(progress)}%
+                        </span>
+                        <button
+                          onClick={() => openEdit(goal)}
+                          className="rounded-lg p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                        </button>
+                        <button
+                          onClick={() => handleDelete(goal.id)}
+                          className="rounded-lg p-1.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
                     </div>
                     <p className="mt-0.5 text-sm text-muted-foreground">
-                      {formatMWK(Number(goal.current_amount))} of{" "}
-                      {formatMWK(Number(goal.target_amount))}
+                      {hidden
+                        ? `${Math.round(progress)}% complete`
+                        : `${formatMWK(Number(goal.current_amount))} of ${formatMWK(Number(goal.target_amount))}`}
                     </p>
                     <div className="mt-3 h-2.5 overflow-hidden rounded-full bg-muted">
                       <motion.div

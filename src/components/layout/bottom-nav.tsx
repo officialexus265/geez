@@ -6,7 +6,7 @@ import { motion } from "framer-motion";
 import {
   Home,
   History,
-  Target,
+  MessageCircle,
   ArrowDownToLine,
   User,
 } from "lucide-react";
@@ -16,7 +16,7 @@ const navItems = [
   { href: "/dashboard", label: "Home", icon: Home },
   { href: "/history", label: "History", icon: History },
   { href: "/deposit", label: "Deposit", icon: ArrowDownToLine, primary: true },
-  { href: "/goals", label: "Goals", icon: Target },
+  { href: "/chat", label: "Chat", icon: MessageCircle },
   { href: "/profile", label: "Profile", icon: User },
 ];
 

@@ -24,6 +24,7 @@ export default function ProfilePage() {
   const [pin, setPin] = useState("");
   const [confirmPin, setConfirmPin] = useState("");
   const [hasPin, setHasPin] = useState(false);
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -40,7 +41,7 @@ export default function ProfilePage() {
 
       const { data: profile } = await supabase
         .from("profiles")
-        .select("full_name, email, phone, pin_hash")
+        .select("full_name, email, phone, pin_hash, avatar_url")
         .eq("id", user.id)
         .single();
 
@@ -49,6 +50,7 @@ export default function ProfilePage() {
         setEmail(profile.email || user.email || "");
         setPhone(profile.phone || "");
         setHasPin(!!profile.pin_hash);
+        setAvatarUrl(profile.avatar_url || null);
       }
       setLoading(false);
     }
@@ -136,9 +138,33 @@ export default function ProfilePage() {
         className="rounded-3xl border border-border bg-card p-6"
       >
         <div className="flex items-center gap-4">
-          <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-primary/10 text-primary">
-            <User className="h-8 w-8" />
-          </div>
+          <label className="relative flex h-16 w-16 cursor-pointer items-center justify-center overflow-hidden rounded-2xl bg-primary/10 text-primary">
+            {avatarUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={avatarUrl} alt="" className="h-full w-full object-cover" />
+            ) : (
+              <User className="h-8 w-8" />
+            )}
+            <input
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={async (e) => {
+                const file = e.target.files?.[0];
+                if (!file) return;
+                const supabase = createClient();
+                const { data: { user } } = await supabase.auth.getUser();
+                if (!user) return;
+                const path = `avatars/${user.id}.${file.name.split(".").pop()}`;
+                const { error } = await supabase.storage.from("branding").upload(path, file, { upsert: true });
+                if (error) { setError(error.message); return; }
+                const { data: { publicUrl } } = supabase.storage.from("branding").getPublicUrl(path);
+                await supabase.from("profiles").update({ avatar_url: publicUrl }).eq("id", user.id);
+                setAvatarUrl(publicUrl);
+                setMessage("Profile picture updated");
+              }}
+            />
+          </label>
           <div>
             <p className="font-semibold">{fullName || "Your Name"}</p>
             <p className="text-sm text-muted-foreground">{email}</p>
@@ -236,6 +262,12 @@ export default function ProfilePage() {
         </button>
       </motion.form>
 
+      <a
+        href="/goals"
+        className="flex w-full items-center justify-center gap-2 rounded-2xl border border-border bg-card py-3.5 text-sm font-medium transition hover:bg-muted"
+      >
+        Goals
+      </a>
       <a
         href="/settings"
         className="flex w-full items-center justify-center gap-2 rounded-2xl border border-border bg-card py-3.5 text-sm font-medium transition hover:bg-muted"
