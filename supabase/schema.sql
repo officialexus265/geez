@@ -293,3 +293,7 @@ create policy "Authenticated can delete messages"
   on public.messages for delete
   to authenticated
   using (true);
+
+-- Chat ringtone (admin-uploaded, shared for both users)
+alter table public.app_settings
+  add column if not exists ringtone_url text;

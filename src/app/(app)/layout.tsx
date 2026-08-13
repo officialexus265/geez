@@ -34,11 +34,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
   function handleRefresh() {
     try {
-      // Soft refresh — full reload breaks Capacitor WebView on some devices
       router.refresh();
-      if (typeof window !== "undefined") {
-        window.location.href = window.location.pathname + window.location.search;
-      }
+      // Re-fetch current route without leaving the Capacitor WebView origin
+      router.replace(pathname || "/dashboard");
     } catch {
       router.push("/dashboard");
     }

@@ -34,6 +34,7 @@ export default function SettingsPage() {
   const [ogImageUrl, setOgImageUrl] = useState<string | null>(null);
   const [appIconUrl, setAppIconUrl] = useState<string | null>(null);
   const [splashUrl, setSplashUrl] = useState<string | null>(null);
+  const [ringtoneUrl, setRingtoneUrl] = useState<string | null>(null);
 
   useEffect(() => {
     async function load() {
@@ -72,6 +73,7 @@ export default function SettingsPage() {
         setOgImageUrl(settings.og_image_url);
         setAppIconUrl((settings as any).app_icon_url || null);
         setSplashUrl((settings as any).splash_url || null);
+        setRingtoneUrl((settings as any).ringtone_url || null);
       }
       setLoading(false);
     }
@@ -98,7 +100,7 @@ export default function SettingsPage() {
 
   async function handleUpload(
     e: React.ChangeEvent<HTMLInputElement>,
-    type: "logo" | "favicon" | "og" | "app_icon" | "splash"
+    type: "logo" | "favicon" | "og" | "app_icon" | "splash" | "ringtone"
   ) {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -131,6 +133,10 @@ export default function SettingsPage() {
       if (type === "splash") {
         setSplashUrl(url);
         updates.splash_url = url;
+      }
+      if (type === "ringtone") {
+        setRingtoneUrl(url);
+        updates.ringtone_url = url;
       }
 
       const supabase = createClient();
@@ -230,6 +236,9 @@ export default function SettingsPage() {
     { key: "app_icon" as const, label: "App Icon (PWA / APK)", url: appIconUrl, hint: "Home screen icon (512×512 PNG)" },
     { key: "splash" as const, label: "Splash / Opening Screen", url: splashUrl, hint: "Shown when app opens" },
   ];
+
+  // ringtone is audio — rendered separately
+
 
   return (
     <div className="space-y-8">
@@ -378,6 +387,37 @@ export default function SettingsPage() {
                 <span className="text-xs font-medium text-primary">Send reset</span>
               </button>
             ))}
+        </div>
+      </section>
+
+      
+      {/* Chat ringtone */}
+      <section className="space-y-3">
+        <h2 className="flex items-center gap-2 text-base font-semibold">
+          Chat notification sound
+        </h2>
+        <p className="text-sm text-muted-foreground">
+          Upload an audio file (mp3, wav, ogg). Plays for both of you when a new message arrives.
+        </p>
+        <div className="rounded-2xl border border-border bg-card p-5">
+          {ringtoneUrl ? (
+            <div className="mb-3 space-y-2">
+              <audio controls src={ringtoneUrl} className="w-full" />
+              <p className="truncate text-xs text-muted-foreground">{ringtoneUrl}</p>
+            </div>
+          ) : (
+            <p className="mb-3 text-sm text-muted-foreground">No custom sound — default beep will be used.</p>
+          )}
+          <label className="inline-flex cursor-pointer items-center gap-2 rounded-full bg-primary px-4 py-2 text-xs font-medium text-primary-foreground">
+            {saving ? "Uploading…" : "Upload ringtone"}
+            <input
+              type="file"
+              accept="audio/mpeg,audio/mp3,audio/wav,audio/ogg,audio/webm,audio/*"
+              className="hidden"
+              disabled={saving}
+              onChange={(e) => handleUpload(e, "ringtone")}
+            />
+          </label>
         </div>
       </section>
 
