@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { verifyWebhookSignature, verifyPayment } from "@/lib/paychangu";
 
 function appBase() {
@@ -91,7 +91,7 @@ export async function POST(request: NextRequest) {
     const verification = await verifyPayment(tx_ref);
     const status = verification?.data?.status;
 
-    const supabase = await createClient();
+    const supabase = createAdminClient();
 
     if (status === "success") {
       const { data: tx } = await supabase

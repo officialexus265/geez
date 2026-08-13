@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { initiatePayment } from "@/lib/paychangu";
 import { randomUUID } from "crypto";
 
@@ -31,7 +31,7 @@ export async function POST(request: NextRequest) {
       throw new Error("NEXT_PUBLIC_APP_URL must be a valid http(s) URL");
     }
 
-    const supabase = await createClient();
+    const supabase = createAdminClient();
 
     const insertData: Record<string, unknown> = {
       tx_ref,

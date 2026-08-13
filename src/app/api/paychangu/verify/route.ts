@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { verifyPayment } from "@/lib/paychangu";
 
 export async function POST(request: NextRequest) {
@@ -12,32 +12,69 @@ export async function POST(request: NextRequest) {
     }
 
     const verification = await verifyPayment(tx_ref);
-    const status = verification?.data?.status;
+    // PayChangu may nest status differently
+    const status =
+      verification?.data?.status ||
+      verification?.status ||
+      verification?.data?.data?.status;
 
-    const supabase = await createClient();
+    const supabase = createAdminClient();
 
-    if (status === "success") {
-      const { data: tx, error } = await supabase
+    if (status === "success" || status === "successful") {
+      const { data: existing } = await supabase
         .from("transactions")
-        .update({
-          status: "success",
-          paychangu_data: verification.data,
-          payment_method:
-            verification?.data?.authorization?.channel
-              ?.toLowerCase()
-              ?.replace(" ", "_") || null,
-          updated_at: new Date().toISOString(),
-        })
+        .select("*")
         .eq("tx_ref", tx_ref)
-        .select()
-        .single();
+        .maybeSingle();
 
-      if (error) {
-        console.error("Update error:", error);
+      let tx = existing;
+
+      if (existing) {
+        if (existing.status !== "success") {
+          const { data: updated, error } = await supabase
+            .from("transactions")
+            .update({
+              status: "success",
+              paychangu_data: verification.data ?? verification,
+              payment_method:
+                verification?.data?.authorization?.channel
+                  ?.toLowerCase()
+                  ?.replace(" ", "_") || null,
+              updated_at: new Date().toISOString(),
+            })
+            .eq("tx_ref", tx_ref)
+            .select()
+            .single();
+
+          if (error) console.error("Update error:", error);
+          else tx = updated;
+        }
+      } else {
+        // Row missing (insert failed earlier) — create from verification
+        const amount = Number(
+          verification?.data?.amount || verification?.data?.data?.amount || 0
+        );
+        const { data: created, error } = await supabase
+          .from("transactions")
+          .insert({
+            tx_ref,
+            amount,
+            currency: "MWK",
+            status: "success",
+            depositor_name:
+              verification?.data?.first_name ||
+              verification?.data?.customer?.name ||
+              "Deposit",
+            paychangu_data: verification.data ?? verification,
+          })
+          .select()
+          .single();
+        if (error) console.error("Insert error:", error);
+        else tx = created;
       }
 
-      // If linked to a goal, increase current_amount
-      if (tx && (tx as any).goal_id) {
+      // Bump goal once when first marked success
+      if (tx && (tx as any).goal_id && existing?.status !== "success") {
         const { data: goal } = await supabase
           .from("goals")
           .select("id, current_amount, target_amount")
@@ -57,10 +94,7 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      return NextResponse.json({
-        status: "success",
-        transaction: tx,
-      });
+      return NextResponse.json({ status: "success", transaction: tx });
     }
 
     if (status === "failed" || status === "cancelled") {
@@ -68,7 +102,7 @@ export async function POST(request: NextRequest) {
         .from("transactions")
         .update({
           status: status === "cancelled" ? "cancelled" : "failed",
-          paychangu_data: verification.data,
+          paychangu_data: verification.data ?? verification,
           updated_at: new Date().toISOString(),
         })
         .eq("tx_ref", tx_ref);
