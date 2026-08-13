@@ -2,6 +2,25 @@ import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { verifyPayment } from "@/lib/paychangu";
 
+const ALLOWED_METHODS = new Set([
+  "airtel_money",
+  "tnm_mpamba",
+  "bank",
+  "card",
+  "other",
+]);
+
+function mapPaymentMethod(channel: unknown): string | null {
+  if (!channel || typeof channel !== "string") return null;
+  const raw = channel.toLowerCase().replace(/\s+/g, "_");
+  if (ALLOWED_METHODS.has(raw)) return raw;
+  if (raw.includes("airtel")) return "airtel_money";
+  if (raw.includes("tnm") || raw.includes("mpamba")) return "tnm_mpamba";
+  if (raw.includes("card")) return "card";
+  if (raw.includes("bank")) return "bank";
+  return "other";
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
@@ -11,78 +30,89 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Missing tx_ref" }, { status: 400 });
     }
 
+    if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
+      console.error("SUPABASE_SERVICE_ROLE_KEY is not set");
+      return NextResponse.json(
+        { error: "Server misconfigured: missing SUPABASE_SERVICE_ROLE_KEY" },
+        { status: 500 }
+      );
+    }
+
     const verification = await verifyPayment(tx_ref);
-    // PayChangu may nest status differently
     const status =
       verification?.data?.status ||
       verification?.status ||
       verification?.data?.data?.status;
 
+    console.log("[verify]", tx_ref, "paychangu status=", status);
+
     const supabase = createAdminClient();
 
     if (status === "success" || status === "successful") {
-      const { data: existing } = await supabase
+      const method = mapPaymentMethod(
+        verification?.data?.authorization?.channel ||
+          verification?.data?.payment_method ||
+          verification?.data?.data?.authorization?.channel
+      );
+
+      // Minimal update first — status only — so constraint issues can't block success
+      const { data: updated, error: updateError } = await supabase
         .from("transactions")
-        .select("*")
+        .update({
+          status: "success",
+          updated_at: new Date().toISOString(),
+        })
         .eq("tx_ref", tx_ref)
+        .select("*")
         .maybeSingle();
 
-      let tx = existing;
-
-      if (existing) {
-        if (existing.status !== "success") {
-          const { data: updated, error } = await supabase
-            .from("transactions")
-            .update({
-              status: "success",
-              paychangu_data: verification.data ?? verification,
-              payment_method:
-                verification?.data?.authorization?.channel
-                  ?.toLowerCase()
-                  ?.replace(" ", "_") || null,
-              updated_at: new Date().toISOString(),
-            })
-            .eq("tx_ref", tx_ref)
-            .select()
-            .single();
-
-          if (error) console.error("Update error:", error);
-          else tx = updated;
-        }
-      } else {
-        // Row missing (insert failed earlier) — create from verification
-        const amount = Number(
-          verification?.data?.amount || verification?.data?.data?.amount || 0
-        );
-        const { data: created, error } = await supabase
-          .from("transactions")
-          .insert({
-            tx_ref,
-            amount,
-            currency: "MWK",
+      if (updateError) {
+        console.error("[verify] status update failed:", updateError);
+        return NextResponse.json(
+          {
             status: "success",
-            depositor_name:
-              verification?.data?.first_name ||
-              verification?.data?.customer?.name ||
-              "Deposit",
-            paychangu_data: verification.data ?? verification,
-          })
-          .select()
-          .single();
-        if (error) console.error("Insert error:", error);
-        else tx = created;
+            db_updated: false,
+            error: updateError.message,
+            hint: "PayChangu OK but DB update failed",
+          },
+          { status: 500 }
+        );
       }
 
-      // Bump goal once when first marked success
-      if (tx && (tx as any).goal_id && existing?.status !== "success") {
+      if (!updated) {
+        console.error("[verify] no row found for", tx_ref);
+        return NextResponse.json(
+          {
+            status: "success",
+            db_updated: false,
+            error: "No transaction row found for this tx_ref",
+          },
+          { status: 404 }
+        );
+      }
+
+      // Best-effort extras (must not undo status=success)
+      const extras: Record<string, unknown> = {
+        paychangu_data: verification.data ?? verification,
+      };
+      if (method) extras.payment_method = method;
+
+      await supabase
+        .from("transactions")
+        .update(extras)
+        .eq("tx_ref", tx_ref);
+
+      // Goal bump (once)
+      if ((updated as any).goal_id) {
         const { data: goal } = await supabase
           .from("goals")
           .select("id, current_amount, target_amount")
-          .eq("id", (tx as any).goal_id)
+          .eq("id", (updated as any).goal_id)
           .single();
 
         if (goal) {
-          const newAmount = Number(goal.current_amount) + Number(tx.amount);
+          const newAmount =
+            Number(goal.current_amount) + Number(updated.amount);
           await supabase
             .from("goals")
             .update({
@@ -94,7 +124,11 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      return NextResponse.json({ status: "success", transaction: tx });
+      return NextResponse.json({
+        status: "success",
+        db_updated: true,
+        transaction: updated,
+      });
     }
 
     if (status === "failed" || status === "cancelled") {
@@ -102,7 +136,6 @@ export async function POST(request: NextRequest) {
         .from("transactions")
         .update({
           status: status === "cancelled" ? "cancelled" : "failed",
-          paychangu_data: verification.data ?? verification,
           updated_at: new Date().toISOString(),
         })
         .eq("tx_ref", tx_ref);
