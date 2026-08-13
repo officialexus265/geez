@@ -70,7 +70,9 @@ export async function middleware(request: NextRequest) {
       path.startsWith("/settings") ||
       path.startsWith("/receipt") ||
       path.startsWith("/about") ||
-      path.startsWith("/chat");
+      path.startsWith("/chat") ||
+      path.startsWith("/admin") ||
+      path.startsWith("/dual");
 
     const isAuthRoute =
       path.startsWith("/login") ||
@@ -109,6 +111,8 @@ export const config = {
     "/receipt/:path*",
     "/about",
     "/chat",
+    "/admin/:path*",
+    "/dual/:path*",
     "/login",
     "/register",
     "/forgot-password",
