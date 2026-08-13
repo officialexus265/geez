@@ -4,23 +4,24 @@ import { NextResponse, type NextRequest } from "next/server";
 export async function middleware(request: NextRequest) {
   const path = request.nextUrl.pathname;
 
-  // PayChangu often POSTs back to return_url → 405 on a page route.
-  // Convert POST → GET redirect so the success screen loads.
+  // PayChangu POST → page would 405. Force GET to same path (query kept).
   if (
     request.method === "POST" &&
-    (path === "/deposit/return" ||
-      path.startsWith("/deposit/return") ||
-      path === "/api/paychangu/return")
+    (path === "/deposit/return" || path.startsWith("/deposit/return/"))
   ) {
-    const url = request.nextUrl.clone();
-    // 303 See Other forces the browser to follow with GET
-    return NextResponse.redirect(url, 303);
+    const base = (
+      process.env.NEXT_PUBLIC_APP_URL || "https://geez-lac.vercel.app"
+    ).replace(/\/$/, "");
+    const dest = new URL(path, base);
+    request.nextUrl.searchParams.forEach((v, k) => dest.searchParams.set(k, v));
+    return NextResponse.redirect(dest.toString(), 303);
   }
 
-  // Skip auth logic for payment return paths
+  // Never run auth logic on payment / public deposit paths
   if (
-    path.startsWith("/deposit/return") ||
-    path.startsWith("/api/paychangu")
+    path.startsWith("/deposit") ||
+    path.startsWith("/api/paychangu") ||
+    path === "/"
   ) {
     return NextResponse.next();
   }
@@ -114,6 +115,5 @@ export const config = {
     "/reset-password",
     "/deposit/return",
     "/deposit/return/:path*",
-    "/api/paychangu/return",
   ],
 };
