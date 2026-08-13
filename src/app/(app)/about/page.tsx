@@ -12,8 +12,9 @@ import {
   Sparkles,
 } from "lucide-react";
 
-const VERSION = "1.0.0";
-const BUILD = "2026.08.12";
+import { APP_VERSION } from "@/lib/version";
+const VERSION = APP_VERSION;
+const BUILD = "2026.08.13";
 
 const tech = [
   { icon: Code2, label: "Next.js + React", desc: "Modern web app" },

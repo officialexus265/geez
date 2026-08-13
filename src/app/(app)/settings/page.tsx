@@ -35,6 +35,10 @@ export default function SettingsPage() {
   const [appIconUrl, setAppIconUrl] = useState<string | null>(null);
   const [splashUrl, setSplashUrl] = useState<string | null>(null);
   const [ringtoneUrl, setRingtoneUrl] = useState<string | null>(null);
+  const [minAppVersion, setMinAppVersion] = useState("1.0.0");
+  const [apkUrl, setApkUrl] = useState("");
+  const [forceMsg, setForceMsg] = useState("");
+  const [forceEnabled, setForceEnabled] = useState(false);
 
   useEffect(() => {
     async function load() {
@@ -74,6 +78,10 @@ export default function SettingsPage() {
         setAppIconUrl((settings as any).app_icon_url || null);
         setSplashUrl((settings as any).splash_url || null);
         setRingtoneUrl((settings as any).ringtone_url || null);
+        setMinAppVersion((settings as any).min_app_version || "1.0.0");
+        setApkUrl((settings as any).apk_download_url || "");
+        setForceMsg((settings as any).force_update_message || "");
+        setForceEnabled(!!(settings as any).force_update_enabled);
       }
       setLoading(false);
     }
@@ -418,6 +426,95 @@ export default function SettingsPage() {
               onChange={(e) => handleUpload(e, "ringtone")}
             />
           </label>
+        </div>
+      </section>
+
+      
+      {/* Force update */}
+      <section className="space-y-3">
+        <h2 className="flex items-center gap-2 text-base font-semibold">
+          Force update (APK)
+        </h2>
+        <p className="text-sm text-muted-foreground">
+          When enabled, users on an older app version must install the new APK before using GEEZ.
+          Bump version in Android <code className="rounded bg-muted px-1">build.gradle</code> when you ship a new APK.
+        </p>
+        <div className="space-y-3 rounded-2xl border border-border bg-card p-5">
+          <label className="flex items-center justify-between gap-3 text-sm">
+            <span className="font-medium">Require update</span>
+            <input
+              type="checkbox"
+              checked={forceEnabled}
+              onChange={(e) => setForceEnabled(e.target.checked)}
+              className="h-5 w-5 accent-primary"
+            />
+          </label>
+          <div>
+            <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
+              Minimum version (e.g. 1.0.1)
+            </label>
+            <input
+              type="text"
+              value={minAppVersion}
+              onChange={(e) => setMinAppVersion(e.target.value)}
+              className="w-full rounded-xl border border-input bg-background px-3 py-2.5 text-sm"
+              placeholder="1.0.1"
+            />
+          </div>
+          <div>
+            <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
+              APK download link (Google Drive / direct URL)
+            </label>
+            <input
+              type="url"
+              value={apkUrl}
+              onChange={(e) => setApkUrl(e.target.value)}
+              className="w-full rounded-xl border border-input bg-background px-3 py-2.5 text-sm"
+              placeholder="https://..."
+            />
+          </div>
+          <div>
+            <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
+              Message shown to users
+            </label>
+            <textarea
+              value={forceMsg}
+              onChange={(e) => setForceMsg(e.target.value)}
+              rows={2}
+              className="w-full rounded-xl border border-input bg-background px-3 py-2.5 text-sm"
+              placeholder="Please install the latest GEEZ app to continue."
+            />
+          </div>
+          <button
+            type="button"
+            disabled={saving}
+            onClick={async () => {
+              setSaving(true);
+              setError(null);
+              setMessage(null);
+              try {
+                const supabase = createClient();
+                const { error } = await supabase
+                  .from("app_settings")
+                  .update({
+                    min_app_version: minAppVersion.trim(),
+                    apk_download_url: apkUrl.trim() || null,
+                    force_update_message: forceMsg.trim() || null,
+                    force_update_enabled: forceEnabled,
+                  })
+                  .eq("id", "main");
+                if (error) throw error;
+                setMessage("Force update settings saved");
+              } catch (err) {
+                setError(err instanceof Error ? err.message : "Failed to save");
+              } finally {
+                setSaving(false);
+              }
+            }}
+            className="w-full rounded-2xl bg-primary py-3 text-sm font-semibold text-primary-foreground disabled:opacity-50"
+          >
+            {saving ? "Saving…" : "Save force update settings"}
+          </button>
         </div>
       </section>
 

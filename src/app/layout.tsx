@@ -4,6 +4,7 @@ import { ThemeProvider } from "@/components/providers/theme-provider";
 import { HideBalanceProvider } from "@/components/providers/hide-balance-provider";
 import { SplashScreen } from "@/components/splash-screen";
 import { DeepLinkHandler } from "@/components/deep-link-handler";
+import { ForceUpdateGate } from "@/components/force-update-gate";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -71,7 +72,7 @@ export default function RootLayout({
         >
           <SplashScreen />
           <DeepLinkHandler />
-          <HideBalanceProvider>{children}</HideBalanceProvider>
+          <ForceUpdateGate><HideBalanceProvider>{children}</HideBalanceProvider></ForceUpdateGate>
         </ThemeProvider>
         <script
           dangerouslySetInnerHTML={{
