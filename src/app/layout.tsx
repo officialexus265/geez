@@ -21,12 +21,20 @@ const APP_URL =
   process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "") ||
   "https://geez-lac.vercel.app";
 
-async function getBranding() {
-  try {
-    const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-    if (!url || !key) return null;
+async function getBranding(): Promise<{
+  app_name?: string | null;
+  og_image_url?: string | null;
+  logo_url?: string | null;
+  favicon_url?: string | null;
+} | null> {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  // Prefer service role so RLS does not hide branding from crawlers
+  const key =
+    process.env.SUPABASE_SERVICE_ROLE_KEY ||
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if (!url || !key) return null;
 
+  try {
     const res = await fetch(
       `${url}/rest/v1/app_settings?id=eq.main&select=app_name,og_image_url,logo_url,favicon_url`,
       {
@@ -34,13 +42,17 @@ async function getBranding() {
           apikey: key,
           Authorization: `Bearer ${key}`,
         },
-        next: { revalidate: 60 },
+        next: { revalidate: 30 },
       }
     );
-    if (!res.ok) return null;
+    if (!res.ok) {
+      console.error("Branding fetch failed", res.status, await res.text());
+      return null;
+    }
     const rows = await res.json();
     return rows?.[0] || null;
-  } catch {
+  } catch (e) {
+    console.error("Branding fetch error", e);
     return null;
   }
 }
@@ -53,10 +65,15 @@ export async function generateMetadata(): Promise<Metadata> {
   const description =
     "Personal and dual savings. Goals, secure PayChangu deposits, and more.";
 
-  const ogImage =
+  // Absolute public image URL only
+  let ogImage =
     branding?.og_image_url ||
     branding?.logo_url ||
     `${APP_URL}/icons/icon-512.png`;
+
+  if (ogImage && ogImage.startsWith("/")) {
+    ogImage = `${APP_URL}${ogImage}`;
+  }
 
   return {
     title: {
