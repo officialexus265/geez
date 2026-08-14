@@ -11,6 +11,7 @@ export default function AdminHomePage() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [allowed, setAllowed] = useState(false);
+  const [debug, setDebug] = useState<string>("");
   const [stats, setStats] = useState({
     users: 0,
     dualPairs: 0,
@@ -21,86 +22,66 @@ export default function AdminHomePage() {
 
   useEffect(() => {
     async function load() {
-      const supabase = createClient();
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (!user) {
-        router.push("/login");
-        return;
-      }
+      try {
+        const me = await fetch("/api/admin/me").then((r) => r.json());
+        setDebug(JSON.stringify(me));
 
-      const { data: profile, error: profileError } = await supabase
-        .from("profiles")
-        .select("role, email")
-        .eq("id", user.id)
-        .maybeSingle();
+        if (!me.allowed) {
+          setAllowed(false);
+          setLoading(false);
+          return;
+        }
+        setAllowed(true);
 
-      if (profileError) {
-        console.error("Admin profile load error:", profileError);
-      }
+        const supabase = createClient();
+        const [{ count: users }, { count: pairs }, { data: txs }] =
+          await Promise.all([
+            supabase.from("profiles").select("*", { count: "exact", head: true }),
+            supabase
+              .from("dual_pairs")
+              .select("*", { count: "exact", head: true })
+              .eq("status", "active"),
+            supabase
+              .from("transactions")
+              .select("amount, status")
+              .eq("status", "success"),
+          ]);
 
-      const role = String(profile?.role || "member").trim().toLowerCase();
-      const email = String(profile?.email || user.email || "")
-        .trim()
-        .toLowerCase();
-      const allowedRoles = ["super_admin", "admin", "finance"];
-      // Hard allow designated owner email + admin roles
-      const isOwner = email === "officialnexus265@gmail.com";
-      const isAllowed = isOwner || allowedRoles.includes(role);
-
-      if (!isAllowed) {
-        console.log(
-          "Admin denied. role=",
-          JSON.stringify(role),
-          "email=",
-          email,
-          "userId=",
-          user.id,
-          "profileError=",
-          profileError
+        const totalDeposits = (txs || []).reduce(
+          (s, t) => s + Number(t.amount),
+          0
         );
+
+        const { count: pendingTx } = await supabase
+          .from("transactions")
+          .select("*", { count: "exact", head: true })
+          .eq("status", "pending");
+
+        let totalFees = 0;
+        try {
+          const { data: fees } = await supabase.from("fee_ledger").select("amount");
+          totalFees = (fees || []).reduce(
+            (s: number, f: { amount: number }) => s + Number(f.amount),
+            0
+          );
+        } catch {
+          /* ignore */
+        }
+
+        setStats({
+          users: users || 0,
+          dualPairs: pairs || 0,
+          totalDeposits,
+          pendingTx: pendingTx || 0,
+          totalFees,
+        });
+      } catch (e) {
+        console.error(e);
+        setDebug(String(e));
         setAllowed(false);
+      } finally {
         setLoading(false);
-        return;
       }
-      setAllowed(true);
-
-      const [{ count: users }, { count: pairs }, { data: txs }] =
-        await Promise.all([
-          supabase.from("profiles").select("*", { count: "exact", head: true }),
-          supabase
-            .from("dual_pairs")
-            .select("*", { count: "exact", head: true })
-            .eq("status", "active"),
-          supabase
-            .from("transactions")
-            .select("amount, status")
-            .eq("status", "success"),
-        ]);
-
-      const totalDeposits = (txs || []).reduce(
-        (s, t) => s + Number(t.amount),
-        0
-      );
-
-      const { count: pendingTx } = await supabase
-        .from("transactions")
-        .select("*", { count: "exact", head: true })
-        .eq("status", "pending");
-
-      setStats({
-        users: users || 0,
-        dualPairs: pairs || 0,
-        totalDeposits,
-        pendingTx: pendingTx || 0,
-        totalFees: 0,
-      });
-
-      const { data: fees } = await supabase.from("fee_ledger").select("amount");
-      const totalFees = (fees || []).reduce((s: number, f: any) => s + Number(f.amount), 0);
-      setStats((prev) => ({ ...prev, totalFees }));
-      setLoading(false);
     }
     load();
   }, [router]);
@@ -118,11 +99,17 @@ export default function AdminHomePage() {
       <div className="rounded-2xl border border-border bg-card p-8 text-center">
         <Shield className="mx-auto h-10 w-10 text-muted-foreground" />
         <p className="mt-3 font-medium">Admin access required</p>
-        <p className="mt-2 text-xs text-muted-foreground">
-          Sign out and back in after setting role to super_admin in Supabase.
-          Allowed: super_admin / admin, or officialnexus265@gmail.com
+        <p className="mt-2 break-all text-left text-[11px] text-muted-foreground">
+          Debug: {debug || "no data"}
         </p>
-        <Link href="/dashboard" className="mt-4 inline-block text-sm text-primary">
+        <p className="mt-2 text-xs text-muted-foreground">
+          Must be signed in as officialnexus265@gmail.com or have role
+          super_admin / admin.
+        </p>
+        <Link
+          href="/dashboard"
+          className="mt-4 inline-block text-sm text-primary"
+        >
           Back to dashboard
         </Link>
       </div>
@@ -130,11 +117,7 @@ export default function AdminHomePage() {
   }
 
   const cards = [
-    {
-      label: "Users",
-      value: String(stats.users),
-      icon: Users,
-    },
+    { label: "Users", value: String(stats.users), icon: Users },
     {
       label: "Active dual pairs",
       value: String(stats.dualPairs),
@@ -165,7 +148,7 @@ export default function AdminHomePage() {
           Admin
         </h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Platform overview — Phase 1 foundation
+          Platform overview
         </p>
       </div>
 
@@ -186,17 +169,9 @@ export default function AdminHomePage() {
         ))}
       </div>
 
-      <div className="rounded-2xl border border-dashed border-border bg-muted/30 p-5 text-sm text-muted-foreground">
-        <p className="font-medium text-foreground">PayChangu merchant balance</p>
-        <p className="mt-1">
-          Live wallet readout can be wired when PayChangu balance API access is
-          available. Client deposit total above is from GEEZ transaction records.
-        </p>
-      </div>
-
       <div className="flex flex-wrap gap-3 text-sm">
         <Link href="/settings" className="text-primary hover:underline">
-          Settings & force update
+          Settings & branding
         </Link>
         <Link href="/dashboard" className="text-primary hover:underline">
           User dashboard
