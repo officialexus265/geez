@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { verifyPayment } from "@/lib/paychangu";
+import { maybeCreditReferral } from "@/lib/referrals";
 
 const ALLOWED_METHODS = new Set([
   "airtel_money",
@@ -136,6 +137,17 @@ export async function POST(request: NextRequest) {
             })
             .eq("id", (updated as any).depositor_id);
         }
+      }
+
+      try {
+        await maybeCreditReferral(
+          supabase,
+          (updated as any).depositor_id,
+          amt,
+          tx_ref
+        );
+      } catch (refErr) {
+        console.error("Referral credit error", refErr);
       }
 
       return NextResponse.json({

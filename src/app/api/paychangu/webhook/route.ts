@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { verifyWebhookSignature, verifyPayment } from "@/lib/paychangu";
+import { maybeCreditReferral } from "@/lib/referrals";
 
 function appBase() {
   return (
@@ -141,6 +142,20 @@ export async function POST(request: NextRequest) {
             })
             .eq("id", (tx as any).depositor_id);
         }
+      }
+
+
+      try {
+        if (tx) {
+          await maybeCreditReferral(
+            supabase,
+            (tx as any).depositor_id,
+            Number(tx.amount),
+            tx_ref
+          );
+        }
+      } catch (refErr) {
+        console.error("Referral credit error", refErr);
       }
 
       const { data: profiles } = await supabase
