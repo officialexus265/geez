@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Target, Plus, X, Loader2, Pencil, Trash2 } from "lucide-react";
+import { Target, Plus, X, Loader2, Pencil, Trash2, Lock, Calendar } from "lucide-react";
 import { formatMWK } from "@/lib/utils";
 import { createClient } from "@/lib/supabase/client";
 import { useHideBalance } from "@/hooks/use-hide-balance";
@@ -14,6 +14,8 @@ interface Goal {
   current_amount: number;
   emoji: string | null;
   deadline: string | null;
+  end_date: string | null;
+  goal_type: "normal" | "fixed";
   is_completed: boolean;
 }
 
@@ -25,6 +27,8 @@ export default function GoalsPage() {
   const [title, setTitle] = useState("");
   const [target, setTarget] = useState("");
   const [emoji, setEmoji] = useState("🎯");
+  const [goalType, setGoalType] = useState<"normal" | "fixed">("normal");
+  const [endDate, setEndDate] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const { hidden } = useHideBalance();
@@ -32,12 +36,16 @@ export default function GoalsPage() {
   async function loadGoals() {
     try {
       const supabase = createClient();
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
       const { data, error } = await supabase
         .from("goals")
         .select("*")
+        .or(`created_by.eq.${user.id},owner_id.eq.${user.id}`)
         .order("created_at", { ascending: false });
       if (error) throw error;
-      setGoals(data || []);
+      setGoals((data as Goal[]) || []);
     } catch (err) {
       console.error(err);
     } finally {
@@ -54,6 +62,8 @@ export default function GoalsPage() {
     setTitle("");
     setTarget("");
     setEmoji("🎯");
+    setGoalType("normal");
+    setEndDate("");
     setError(null);
     setShowForm(true);
   }
@@ -63,6 +73,8 @@ export default function GoalsPage() {
     setTitle(goal.title);
     setTarget(String(goal.target_amount));
     setEmoji(goal.emoji || "🎯");
+    setGoalType(goal.goal_type || "normal");
+    setEndDate(goal.end_date || goal.deadline || "");
     setError(null);
     setShowForm(true);
   }
@@ -70,6 +82,10 @@ export default function GoalsPage() {
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
     if (!title.trim() || !target) return;
+    if (goalType === "fixed" && !endDate) {
+      setError("Fixed goals need an end date");
+      return;
+    }
 
     setSaving(true);
     setError(null);
@@ -79,56 +95,46 @@ export default function GoalsPage() {
       const {
         data: { user },
       } = await supabase.auth.getUser();
-      if (!user) throw new Error("Not authenticated");
+      if (!user) throw new Error("Not signed in");
+
+      const payload: Record<string, unknown> = {
+        title: title.trim(),
+        target_amount: Number(target),
+        emoji,
+        goal_type: goalType,
+        end_date: goalType === "fixed" ? endDate : null,
+        deadline: goalType === "fixed" ? endDate : null,
+        owner_id: user.id,
+        created_by: user.id,
+      };
 
       if (editing) {
-        const { data, error } = await supabase
+        const { error } = await supabase
           .from("goals")
-          .update({
-            title: title.trim(),
-            target_amount: Number(target),
-            emoji,
-          })
-          .eq("id", editing.id)
-          .select()
-          .single();
+          .update(payload)
+          .eq("id", editing.id);
         if (error) throw error;
-        setGoals((prev) => prev.map((g) => (g.id === editing.id ? data : g)));
       } else {
-        const { data, error } = await supabase
-          .from("goals")
-          .insert({
-            title: title.trim(),
-            target_amount: Number(target),
-            current_amount: 0,
-            emoji,
-            created_by: user.id,
-          })
-          .select()
-          .single();
+        const { error } = await supabase.from("goals").insert(payload);
         if (error) throw error;
-        setGoals((prev) => [data, ...prev]);
       }
 
       setShowForm(false);
-      setEditing(null);
+      await loadGoals();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to save goal");
+      setError(err instanceof Error ? err.message : "Failed to save");
     } finally {
       setSaving(false);
     }
   }
 
   async function handleDelete(id: string) {
-    if (!confirm("Delete this goal?")) return;
-    try {
-      const supabase = createClient();
-      const { error } = await supabase.from("goals").delete().eq("id", id);
-      if (error) throw error;
-      setGoals((prev) => prev.filter((g) => g.id !== id));
-    } catch (err) {
-      alert(err instanceof Error ? err.message : "Failed to delete");
+    if (!confirm("Delete this goal? Money stays in your balance — only the goal label is removed.")) {
+      return;
     }
+    const supabase = createClient();
+    await supabase.from("goals").delete().eq("id", id);
+    await loadGoals();
   }
 
   if (loading) {
@@ -145,17 +151,115 @@ export default function GoalsPage() {
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Goals</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Save together for what matters
+            Normal plans or fixed lock until end date
           </p>
         </div>
         <button
+          type="button"
           onClick={openCreate}
-          className="flex h-10 items-center gap-1.5 rounded-full bg-primary px-4 text-sm font-medium text-primary-foreground transition hover:bg-primary-hover"
+          className="flex items-center gap-2 rounded-full bg-primary px-4 py-2 text-sm font-medium text-primary-foreground"
         >
           <Plus className="h-4 w-4" />
           New
         </button>
       </div>
+
+      <div className="rounded-2xl border border-border bg-card/50 p-4 text-xs text-muted-foreground">
+        <p>
+          <strong className="text-foreground">Normal</strong> — withdraw anytime (3% fee).{" "}
+          <strong className="text-foreground">Fixed</strong> — locked until end date (3% at
+          maturity) or early exit (6% of amount withdrawn). Loans only use fixed balances.
+        </p>
+      </div>
+
+      {goals.length === 0 ? (
+        <div className="rounded-2xl border border-dashed border-border py-16 text-center">
+          <Target className="mx-auto h-10 w-10 text-muted-foreground" />
+          <p className="mt-3 text-sm text-muted-foreground">No goals yet</p>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {goals.map((g) => {
+            const pct = Math.min(
+              100,
+              (Number(g.current_amount) / Number(g.target_amount)) * 100
+            );
+            const isFixed = (g.goal_type || "normal") === "fixed";
+            return (
+              <motion.div
+                key={g.id}
+                layout
+                className="rounded-2xl border border-border bg-card p-4"
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <p className="font-semibold">
+                      {g.emoji || "🎯"} {g.title}
+                    </p>
+                    <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
+                      <span
+                        className={`rounded-full px-2 py-0.5 font-medium ${
+                          isFixed
+                            ? "bg-primary/15 text-primary"
+                            : "bg-muted text-foreground"
+                        }`}
+                      >
+                        {isFixed ? (
+                          <span className="inline-flex items-center gap-1">
+                            <Lock className="h-3 w-3" /> Fixed
+                          </span>
+                        ) : (
+                          "Normal"
+                        )}
+                      </span>
+                      {(g.end_date || g.deadline) && (
+                        <span className="inline-flex items-center gap-1">
+                          <Calendar className="h-3 w-3" />
+                          {g.end_date || g.deadline}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex gap-1">
+                    <button
+                      type="button"
+                      onClick={() => openEdit(g)}
+                      className="rounded-full p-2 hover:bg-muted"
+                    >
+                      <Pencil className="h-4 w-4" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleDelete(g.id)}
+                      className="rounded-full p-2 hover:bg-muted text-destructive"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </div>
+                </div>
+                <div className="mt-3">
+                  <div className="flex justify-between text-xs">
+                    <span>
+                      {hidden
+                        ? `${pct.toFixed(0)}%`
+                        : formatMWK(Number(g.current_amount))}
+                    </span>
+                    <span className="text-muted-foreground">
+                      {hidden ? "—" : formatMWK(Number(g.target_amount))}
+                    </span>
+                  </div>
+                  <div className="mt-1 h-2 overflow-hidden rounded-full bg-muted">
+                    <div
+                      className="h-full rounded-full bg-primary transition-all"
+                      style={{ width: `${pct}%` }}
+                    />
+                  </div>
+                </div>
+              </motion.div>
+            );
+          })}
+        </div>
+      )}
 
       <AnimatePresence>
         {showForm && (
@@ -166,170 +270,105 @@ export default function GoalsPage() {
             className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 p-4 sm:items-center"
             onClick={() => setShowForm(false)}
           >
-            <motion.div
-              initial={{ y: 40, opacity: 0 }}
-              animate={{ y: 0, opacity: 1 }}
-              exit={{ y: 40, opacity: 0 }}
+            <motion.form
+              initial={{ y: 40 }}
+              animate={{ y: 0 }}
+              exit={{ y: 40 }}
               onClick={(e) => e.stopPropagation()}
-              className="w-full max-w-md rounded-3xl border border-border bg-card p-6 shadow-2xl"
+              onSubmit={handleSave}
+              className="w-full max-w-md space-y-4 rounded-3xl bg-card p-6 shadow-xl"
             >
-              <div className="mb-5 flex items-center justify-between">
-                <h2 className="text-lg font-semibold">
-                  {editing ? "Edit Goal" : "New Goal"}
+              <div className="flex items-center justify-between">
+                <h2 className="text-lg font-bold">
+                  {editing ? "Edit goal" : "New goal"}
                 </h2>
-                <button
-                  onClick={() => setShowForm(false)}
-                  className="rounded-full p-1.5 hover:bg-muted"
-                >
+                <button type="button" onClick={() => setShowForm(false)}>
                   <X className="h-5 w-5" />
                 </button>
               </div>
 
-              <form onSubmit={handleSave} className="space-y-4">
-                <div>
-                  <label className="mb-1.5 block text-sm font-medium">Emoji</label>
-                  <div className="flex flex-wrap gap-2">
-                    {["🎯", "🏠", "✈️", "💍", "🚗", "📚", "💪", "❤️"].map((e) => (
-                      <button
-                        key={e}
-                        type="button"
-                        onClick={() => setEmoji(e)}
-                        className={`flex h-11 w-11 items-center justify-center rounded-xl text-xl transition ${
-                          emoji === e
-                            ? "bg-primary/15 ring-2 ring-primary"
-                            : "bg-muted hover:bg-muted/80"
-                        }`}
-                      >
-                        {e}
-                      </button>
-                    ))}
-                  </div>
-                </div>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setGoalType("normal")}
+                  className={`rounded-xl border p-3 text-sm ${
+                    goalType === "normal"
+                      ? "border-primary bg-primary/10 text-primary"
+                      : "border-border"
+                  }`}
+                >
+                  Normal
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setGoalType("fixed")}
+                  className={`rounded-xl border p-3 text-sm ${
+                    goalType === "fixed"
+                      ? "border-primary bg-primary/10 text-primary"
+                      : "border-border"
+                  }`}
+                >
+                  Fixed lock
+                </button>
+              </div>
 
-                <div>
-                  <label className="mb-1.5 block text-sm font-medium">Title</label>
-                  <input
-                    type="text"
-                    required
-                    value={title}
-                    onChange={(e) => setTitle(e.target.value)}
-                    placeholder="e.g. Dream vacation"
-                    className="w-full rounded-xl border border-input bg-background px-3 py-2.5 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
-                    maxLength={60}
-                  />
-                </div>
+              <input
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                placeholder="Goal title"
+                required
+                className="w-full rounded-xl border border-input bg-background px-4 py-3 text-sm"
+              />
+              <input
+                type="number"
+                min={1}
+                value={target}
+                onChange={(e) => setTarget(e.target.value)}
+                placeholder="Target amount (MWK)"
+                required
+                className="w-full rounded-xl border border-input bg-background px-4 py-3 text-sm"
+              />
+              <input
+                value={emoji}
+                onChange={(e) => setEmoji(e.target.value)}
+                placeholder="Emoji"
+                className="w-full rounded-xl border border-input bg-background px-4 py-3 text-sm"
+              />
 
+              {goalType === "fixed" && (
                 <div>
-                  <label className="mb-1.5 block text-sm font-medium">
-                    Target amount (MWK)
+                  <label className="mb-1 block text-xs text-muted-foreground">
+                    End date (locked until then)
                   </label>
                   <input
-                    type="number"
+                    type="date"
+                    value={endDate}
+                    onChange={(e) => setEndDate(e.target.value)}
                     required
-                    min={1000}
-                    value={target}
-                    onChange={(e) => setTarget(e.target.value)}
-                    placeholder="500000"
-                    className="w-full rounded-xl border border-input bg-background px-3 py-2.5 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+                    className="w-full rounded-xl border border-input bg-background px-4 py-3 text-sm"
                   />
+                  <p className="mt-1 text-[11px] text-muted-foreground">
+                    Early exit: 6% of amount withdrawn. At/after end date: 3% on
+                    withdraw.
+                  </p>
                 </div>
+              )}
 
-                {error && (
-                  <div className="rounded-xl bg-destructive/10 px-3 py-2 text-sm text-destructive">
-                    {error}
-                  </div>
-                )}
+              {error && (
+                <p className="text-sm text-destructive">{error}</p>
+              )}
 
-                <button
-                  type="submit"
-                  disabled={saving}
-                  className="flex w-full items-center justify-center gap-2 rounded-2xl bg-primary py-3.5 text-sm font-semibold text-primary-foreground disabled:opacity-60"
-                >
-                  {saving ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : editing ? (
-                    "Save changes"
-                  ) : (
-                    "Create Goal"
-                  )}
-                </button>
-              </form>
-            </motion.div>
+              <button
+                type="submit"
+                disabled={saving}
+                className="w-full rounded-2xl bg-primary py-3 text-sm font-semibold text-primary-foreground disabled:opacity-50"
+              >
+                {saving ? "Saving…" : editing ? "Update" : "Create goal"}
+              </button>
+            </motion.form>
           </motion.div>
         )}
       </AnimatePresence>
-
-      {goals.length === 0 ? (
-        <motion.div
-          initial={{ opacity: 0, y: 16 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="rounded-2xl border border-dashed border-border bg-card/50 p-12 text-center"
-        >
-          <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-muted">
-            <Target className="h-6 w-6 text-muted-foreground" />
-          </div>
-          <p className="text-sm text-muted-foreground">
-            No goals yet. Create your first savings goal!
-          </p>
-        </motion.div>
-      ) : (
-        <div className="space-y-3">
-          {goals.map((goal, i) => {
-            const progress = Math.min(
-              100,
-              (Number(goal.current_amount) / Number(goal.target_amount)) * 100
-            );
-            return (
-              <motion.div
-                key={goal.id}
-                initial={{ opacity: 0, y: 12 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: i * 0.05 }}
-                className="rounded-2xl border border-border bg-card p-5"
-              >
-                <div className="flex items-start gap-3">
-                  <span className="text-2xl">{goal.emoji || "🎯"}</span>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center justify-between gap-2">
-                      <h3 className="truncate font-semibold">{goal.title}</h3>
-                      <div className="flex items-center gap-1">
-                        <span className="text-xs font-medium text-muted-foreground">
-                          {Math.round(progress)}%
-                        </span>
-                        <button
-                          onClick={() => openEdit(goal)}
-                          className="rounded-lg p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
-                        >
-                          <Pencil className="h-3.5 w-3.5" />
-                        </button>
-                        <button
-                          onClick={() => handleDelete(goal.id)}
-                          className="rounded-lg p-1.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </button>
-                      </div>
-                    </div>
-                    <p className="mt-0.5 text-sm text-muted-foreground">
-                      {hidden
-                        ? `${Math.round(progress)}% complete`
-                        : `${formatMWK(Number(goal.current_amount))} of ${formatMWK(Number(goal.target_amount))}`}
-                    </p>
-                    <div className="mt-3 h-2.5 overflow-hidden rounded-full bg-muted">
-                      <motion.div
-                        initial={{ width: 0 }}
-                        animate={{ width: `${progress}%` }}
-                        transition={{ duration: 0.8, ease: "easeOut" }}
-                        className="h-full rounded-full bg-primary"
-                      />
-                    </div>
-                  </div>
-                </div>
-              </motion.div>
-            );
-          })}
-        </div>
-      )}
     </div>
   );
 }

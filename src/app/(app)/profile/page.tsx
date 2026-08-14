@@ -307,7 +307,25 @@ export default function ProfilePage() {
         </button>
       )}
 <a
-        href="/about"
+        href="/dual/setup"
+          className="flex w-full items-center justify-between rounded-2xl border border-border bg-card px-4 py-3.5 text-sm font-medium transition hover:bg-muted"
+        >
+          <span>Dual savings setup</span>
+        </a>
+        <a
+          href="/dual/leave"
+          className="flex w-full items-center justify-between rounded-2xl border border-border bg-card px-4 py-3.5 text-sm font-medium transition hover:bg-muted"
+        >
+          <span>Leave dual account</span>
+        </a>
+        <a
+          href="/admin"
+          className="flex w-full items-center justify-between rounded-2xl border border-border bg-card px-4 py-3.5 text-sm font-medium transition hover:bg-muted"
+        >
+          <span>Admin panel</span>
+        </a>
+        <a
+          href="/about"
         className="flex w-full items-center justify-center gap-2 rounded-2xl border border-border bg-card py-3.5 text-sm font-medium transition hover:bg-muted"
       >
         About GEEZ

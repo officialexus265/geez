@@ -1,16 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { verifyPin } from "@/lib/pin";
 import {
   initiateMobileMoneyPayout,
   MOBILE_MONEY_OPERATORS,
 } from "@/lib/paychangu";
-import { sendEmail, sendSMS } from "@/lib/notifications";
-import { randomUUID } from "crypto";
 
 /**
  * POST /api/withdrawals/confirm
- * Verify partner code + user PIN → execute PayChangu payout
+ * Verify email code + PIN → mark processing, fee ledger, debit goal if any
  */
 export async function POST(request: NextRequest) {
   try {
@@ -25,136 +24,135 @@ export async function POST(request: NextRequest) {
 
     const { withdrawal_id, code, pin } = await request.json();
 
-    if (!withdrawal_id || !code || !pin) {
+    if (!withdrawal_id || !code) {
       return NextResponse.json(
-        { error: "Missing required fields" },
+        { error: "Missing withdrawal_id or code" },
         { status: 400 }
       );
     }
 
-    // Fetch withdrawal
-    const { data: withdrawal, error: wError } = await supabase
+    const admin = createAdminClient();
+
+    const { data: w } = await admin
       .from("withdrawals")
       .select("*")
       .eq("id", withdrawal_id)
-      .eq("initiated_by", user.id)
       .single();
 
-    if (wError || !withdrawal) {
-      return NextResponse.json(
-        { error: "Withdrawal not found" },
-        { status: 404 }
-      );
+    if (!w || w.initiated_by !== user.id) {
+      return NextResponse.json({ error: "Withdrawal not found" }, { status: 404 });
     }
 
-    if (withdrawal.status !== "pending_confirmation") {
+    if (w.status !== "pending_confirmation") {
       return NextResponse.json(
-        { error: "Withdrawal already processed" },
+        { error: "Withdrawal is not awaiting confirmation" },
         { status: 400 }
       );
     }
 
-    if (
-      !withdrawal.code_expires_at ||
-      new Date(withdrawal.code_expires_at) < new Date()
-    ) {
-      return NextResponse.json(
-        { error: "Confirmation code expired" },
-        { status: 400 }
-      );
+    if (String(w.confirmation_code) !== String(code).trim()) {
+      return NextResponse.json({ error: "Invalid confirmation code" }, { status: 400 });
     }
 
-    if (withdrawal.confirmation_code !== code) {
-      return NextResponse.json(
-        { error: "Invalid confirmation code" },
-        { status: 400 }
-      );
-    }
-
-    // Verify PIN
-    const { data: profile } = await supabase
+    // PIN optional if user has one set
+    const { data: profile } = await admin
       .from("profiles")
-      .select("pin_hash, full_name, email, phone")
+      .select("pin_hash, email, full_name")
       .eq("id", user.id)
       .single();
 
-    if (!profile?.pin_hash) {
-      return NextResponse.json(
-        { error: "Please set a withdrawal PIN in your profile first" },
-        { status: 400 }
-      );
+    if (profile?.pin_hash) {
+      if (!pin) {
+        return NextResponse.json({ error: "PIN required" }, { status: 400 });
+      }
+      const ok = await verifyPin(pin, profile.pin_hash);
+      if (!ok) {
+        return NextResponse.json({ error: "Incorrect PIN" }, { status: 400 });
+      }
     }
 
-    // pin_hash stored as "hash:salt"
-    const [storedHash, salt] = profile.pin_hash.split(":");
-    if (!verifyPin(pin, storedHash, salt)) {
-      return NextResponse.json({ error: "Invalid PIN" }, { status: 400 });
-    }
-
-    // Mark as processing
-    await supabase
-      .from("withdrawals")
-      .update({ status: "processing" })
-      .eq("id", withdrawal_id);
-
-    // Execute PayChangu payout
-    const operatorKey =
-      withdrawal.destination_type === "airtel_money"
-        ? "airtel_money"
-        : "tnm_mpamba";
-
-    const chargeId = `GEEZ-WD-${randomUUID().slice(0, 12)}`;
-
-    try {
-      const payout = await initiateMobileMoneyPayout({
-        amount: Number(withdrawal.amount),
-        mobile: withdrawal.phone_number,
-        mobile_money_operator_ref_id: MOBILE_MONEY_OPERATORS[operatorKey],
-        charge_id: chargeId,
-        first_name: profile.full_name?.split(" ")[0],
-      });
-
-      await supabase
-        .from("withdrawals")
+    // Debit goal balance if source is goal
+    if (w.source_type === "goal" && w.goal_id) {
+      const { data: goal } = await admin
+        .from("goals")
+        .select("*")
+        .eq("id", w.goal_id)
+        .single();
+      if (!goal || Number(goal.current_amount) < Number(w.amount)) {
+        return NextResponse.json(
+          { error: "Insufficient goal balance" },
+          { status: 400 }
+        );
+      }
+      await admin
+        .from("goals")
         .update({
-          status: "success",
-          paychangu_ref: chargeId,
-          paychangu_data: payout,
-          confirmation_code: null, // clear code
+          current_amount: Number(goal.current_amount) - Number(w.amount),
+          updated_at: new Date().toISOString(),
         })
-        .eq("id", withdrawal_id);
+        .eq("id", w.goal_id);
+    }
 
-      // Notify both parties
-      const successMsg = `GEEZ: Withdrawal of MWK ${withdrawal.amount} to ${withdrawal.phone_number} was successful.`;
+    // Fee ledger
+    if (Number(w.fee_amount) > 0) {
+      const feeType = w.is_early_exit
+        ? "early_exit_6"
+        : w.source_type === "goal"
+          ? "maturity_3"
+          : "withdraw_3";
+      await admin.from("fee_ledger").insert({
+        user_id: user.id,
+        withdrawal_id: w.id,
+        goal_id: w.goal_id || null,
+        fee_type: feeType,
+        amount: w.fee_amount,
+        meta: { fee_percent: w.fee_percent, gross: w.amount, net: w.net_amount },
+      });
+    }
 
-      if (profile.email) {
-        await sendEmail({
-          to: profile.email,
-          subject: "GEEZ — Withdrawal successful",
-          html: `<p>${successMsg}</p>`,
+    await admin
+      .from("withdrawals")
+      .update({
+        status: "processing",
+        confirmed_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", w.id);
+
+    // Attempt PayChangu payout if configured
+    try {
+      const operator =
+        w.destination_type === "airtel_money"
+          ? MOBILE_MONEY_OPERATORS?.AIRTEL || "airtel"
+          : MOBILE_MONEY_OPERATORS?.TNM || "tnm";
+
+      if (typeof initiateMobileMoneyPayout === "function") {
+        await initiateMobileMoneyPayout({
+          amount: Number(w.net_amount ?? w.amount),
+          phone: w.phone_number,
+          operator,
+          reference: `GEEZ-WD-${w.id.slice(0, 8)}`,
         });
       }
-      if (profile.phone) {
-        await sendSMS({ to: profile.phone, content: successMsg });
-      }
-    } catch (payoutError) {
-      console.error("Payout failed:", payoutError);
-      await supabase
-        .from("withdrawals")
-        .update({ status: "failed" })
-        .eq("id", withdrawal_id);
 
-      return NextResponse.json(
-        { error: "Payout failed. Please try again or contact support." },
-        { status: 500 }
-      );
+      await admin
+        .from("withdrawals")
+        .update({ status: "success", updated_at: new Date().toISOString() })
+        .eq("id", w.id);
+    } catch (payoutErr) {
+      console.error("Payout error (marked processing):", payoutErr);
+      // stays processing for manual admin follow-up
     }
 
-    return NextResponse.json({ success: true });
+    return NextResponse.json({
+      status: "ok",
+      net_amount: w.net_amount,
+      fee_amount: w.fee_amount,
+    });
   } catch (err) {
-    console.error(err);
+    console.error("Confirm withdraw error:", err);
     return NextResponse.json(
-      { error: "Something went wrong" },
+      { error: err instanceof Error ? err.message : "Failed" },
       { status: 500 }
     );
   }

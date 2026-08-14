@@ -26,6 +26,15 @@ export default function WithdrawPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [withdrawalId, setWithdrawalId] = useState<string | null>(null);
+  const [feeInfo, setFeeInfo] = useState<{
+    fee_percent: number;
+    fee_amount: number;
+    net_amount: number;
+    is_early_exit?: boolean;
+  } | null>(null);
+  const [sourceType, setSourceType] = useState<"general" | "goal">("general");
+  const [goals, setGoals] = useState<{ id: string; title: string; current_amount: number; goal_type?: string }[]>([]);
+  const [goalId, setGoalId] = useState("");
 
   async function handleStart(e: React.FormEvent) {
     e.preventDefault();
@@ -48,6 +57,8 @@ export default function WithdrawPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           amount: num,
+          source_type: sourceType,
+          goal_id: sourceType === "goal" ? goalId || null : null,
           destination_type: destination,
           phone_number: phone.replace(/\s/g, ""),
         }),
