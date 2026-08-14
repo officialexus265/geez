@@ -2,30 +2,41 @@
 
 import { useEffect, useRef, useState, useCallback } from "react";
 import { motion } from "framer-motion";
-import { Send, Loader2, MessageCircle } from "lucide-react";
+import { Send, Loader2, MessageCircle, Shield } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { formatDate } from "@/lib/utils";
 
-interface Message {
+interface ChatMsg {
   id: string;
-  user_id: string;
+  thread_id: string;
+  sender_id: string | null;
   body: string;
+  is_from_admin: boolean;
+  is_system: boolean;
   created_at: string;
-  profiles?: { full_name: string; avatar_url: string | null } | null;
   _optimistic?: boolean;
 }
 
+interface ThreadRow {
+  id: string;
+  user_id: string | null;
+  dual_pair_id: string | null;
+  subject: string | null;
+  last_message_at: string | null;
+  profiles?: { full_name: string } | null;
+}
+
 export default function ChatPage() {
-  const [messages, setMessages] = useState<Message[]>([]);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [userId, setUserId] = useState<string | null>(null);
+  const [threadId, setThreadId] = useState<string | null>(null);
+  const [threads, setThreads] = useState<ThreadRow[]>([]);
+  const [messages, setMessages] = useState<ChatMsg[]>([]);
   const [text, setText] = useState("");
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
-  const [userId, setUserId] = useState<string | null>(null);
-  const [myName, setMyName] = useState("You");
-  const [ringtoneUrl, setRingtoneUrl] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
-  const userIdRef = useRef<string | null>(null);
+  const [ringtoneUrl, setRingtoneUrl] = useState<string | null>(null);
 
   const playSound = useCallback(() => {
     try {
@@ -35,7 +46,6 @@ export default function ChatPage() {
         a.play().catch(() => {});
         return;
       }
-      // Fallback: short beep via Web Audio API
       const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
@@ -47,9 +57,34 @@ export default function ChatPage() {
       gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.25);
       osc.stop(ctx.currentTime + 0.25);
     } catch {
-      // ignore autoplay restrictions
+      /* ignore */
     }
   }, [ringtoneUrl]);
+
+  async function ensureMemberThread(uid: string) {
+    const supabase = createClient();
+    let { data: thread } = await supabase
+      .from("chat_threads")
+      .select("*")
+      .eq("user_id", uid)
+      .eq("thread_type", "user")
+      .maybeSingle();
+
+    if (!thread) {
+      const { data: created, error } = await supabase
+        .from("chat_threads")
+        .insert({
+          user_id: uid,
+          thread_type: "user",
+          subject: "Support",
+        })
+        .select()
+        .single();
+      if (error) throw error;
+      thread = created;
+    }
+    return thread;
+  }
 
   useEffect(() => {
     const supabase = createClient();
@@ -59,94 +94,105 @@ export default function ChatPage() {
       const {
         data: { user },
       } = await supabase.auth.getUser();
-      if (!user) return;
+      if (!user) {
+        setLoading(false);
+        return;
+      }
       setUserId(user.id);
-      userIdRef.current = user.id;
 
       const { data: profile } = await supabase
         .from("profiles")
-        .select("full_name")
+        .select("role")
         .eq("id", user.id)
         .single();
-      if (profile?.full_name) setMyName(profile.full_name);
+
+      const role = (profile?.role || "").toLowerCase();
+      const admin = ["super_admin", "admin", "support", "finance"].includes(role);
+      setIsAdmin(admin);
 
       const { data: settings } = await supabase
         .from("app_settings")
         .select("ringtone_url")
         .eq("id", "main")
         .maybeSingle();
-      if ((settings as any)?.ringtone_url) {
-        setRingtoneUrl((settings as any).ringtone_url);
+      if (settings?.ringtone_url) setRingtoneUrl(settings.ringtone_url);
+
+      if (admin) {
+        const { data: list } = await supabase
+          .from("chat_threads")
+          .select("id, user_id, dual_pair_id, subject, last_message_at")
+          .order("last_message_at", { ascending: false, nullsFirst: false });
+        setThreads((list as ThreadRow[]) || []);
+        setLoading(false);
+      } else {
+        const thread = await ensureMemberThread(user.id);
+        setThreadId(thread.id);
+        await loadMessages(thread.id);
+        setLoading(false);
+
+        channel = supabase
+          .channel(`chat-${thread.id}`)
+          .on(
+            "postgres_changes",
+            {
+              event: "INSERT",
+              schema: "public",
+              table: "chat_messages",
+              filter: `thread_id=eq.${thread.id}`,
+            },
+            (payload) => {
+              const row = payload.new as ChatMsg;
+              setMessages((prev) => {
+                if (prev.some((m) => m.id === row.id)) return prev;
+                if (row.sender_id !== user.id) playSound();
+                return [...prev.filter((m) => !m._optimistic), row];
+              });
+            }
+          )
+          .subscribe();
       }
-
-      const { data } = await supabase
-        .from("messages")
-        .select("id, user_id, body, created_at, profiles(full_name, avatar_url)")
-        .order("created_at", { ascending: true })
-        .limit(150);
-
-      setMessages((data as any) || []);
-      setLoading(false);
-
-      channel = supabase
-        .channel("geez-chat-realtime")
-        .on(
-          "postgres_changes",
-          { event: "INSERT", schema: "public", table: "messages" },
-          async (payload) => {
-            const row = payload.new as Message;
-            // Avoid duplicates (optimistic already added)
-            setMessages((prev) => {
-              if (prev.some((m) => m.id === row.id)) return prev;
-              // Replace optimistic temp message with real one
-              const withoutOptimistic = prev.filter(
-                (m) =>
-                  !(
-                    m._optimistic &&
-                    m.body === row.body &&
-                    m.user_id === row.user_id
-                  )
-              );
-              return [
-                ...withoutOptimistic,
-                {
-                  ...row,
-                  profiles: row.profiles || null,
-                },
-              ];
-            });
-
-            // Fetch profile name if missing
-            if (!row.profiles) {
-              const { data: full } = await supabase
-                .from("messages")
-                .select("id, user_id, body, created_at, profiles(full_name, avatar_url)")
-                .eq("id", row.id)
-                .single();
-              if (full) {
-                setMessages((prev) =>
-                  prev.map((m) => (m.id === row.id ? (full as any) : m))
-                );
-              }
-            }
-
-            // Sound only for partner messages
-            if (row.user_id !== userIdRef.current) {
-              playSound();
-            }
-          }
-        )
-        .subscribe((status) => {
-          console.log("[chat] realtime status:", status);
-        });
     }
 
     init();
-
     return () => {
       if (channel) supabase.removeChannel(channel);
     };
   }, [playSound]);
+
+  async function loadMessages(tid: string) {
+    const supabase = createClient();
+    const { data } = await supabase
+      .from("chat_messages")
+      .select("*")
+      .eq("thread_id", tid)
+      .order("created_at", { ascending: true });
+    setMessages((data as ChatMsg[]) || []);
+  }
+
+  async function openThread(t: ThreadRow) {
+    setThreadId(t.id);
+    await loadMessages(t.id);
+    const supabase = createClient();
+    supabase
+      .channel(`chat-admin-${t.id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "chat_messages",
+          filter: `thread_id=eq.${t.id}`,
+        },
+        (payload) => {
+          const row = payload.new as ChatMsg;
+          setMessages((prev) => {
+            if (prev.some((m) => m.id === row.id)) return prev;
+            return [...prev, row];
+          });
+        }
+      )
+      .subscribe();
+  }
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -154,42 +200,42 @@ export default function ChatPage() {
 
   async function send(e: React.FormEvent) {
     e.preventDefault();
-    if (!text.trim() || !userId) return;
-
-    const body = text.trim();
-    const tempId = `temp-${Date.now()}`;
-    const optimistic: Message = {
-      id: tempId,
-      user_id: userId,
-      body,
-      created_at: new Date().toISOString(),
-      profiles: { full_name: myName, avatar_url: null },
-      _optimistic: true,
-    };
-
-    // Show immediately
-    setMessages((prev) => [...prev, optimistic]);
-    setText("");
+    if (!text.trim() || !threadId || !userId) return;
     setSending(true);
+    const body = text.trim();
+    setText("");
+    const tempId = `tmp-${Date.now()}`;
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: tempId,
+        thread_id: threadId,
+        sender_id: userId,
+        body,
+        is_from_admin: isAdmin,
+        is_system: false,
+        created_at: new Date().toISOString(),
+        _optimistic: true,
+      },
+    ]);
 
     try {
       const supabase = createClient();
-      const { data, error } = await supabase
-        .from("messages")
-        .insert({ user_id: userId, body })
-        .select("id, user_id, body, created_at, profiles(full_name, avatar_url)")
-        .single();
-
+      const { error } = await supabase.from("chat_messages").insert({
+        thread_id: threadId,
+        sender_id: userId,
+        body,
+        is_from_admin: isAdmin,
+        is_system: false,
+      });
       if (error) throw error;
-
-      // Replace optimistic with real row
-      setMessages((prev) =>
-        prev.map((m) => (m.id === tempId ? (data as any) : m))
-      );
+      await supabase
+        .from("chat_threads")
+        .update({ last_message_at: new Date().toISOString() })
+        .eq("id", threadId);
     } catch (err) {
-      // Remove optimistic on failure
+      console.error(err);
       setMessages((prev) => prev.filter((m) => m.id !== tempId));
-      alert(err instanceof Error ? err.message : "Failed to send");
     } finally {
       setSending(false);
     }
@@ -203,82 +249,122 @@ export default function ChatPage() {
     );
   }
 
-  return (
-    <div className="flex h-[calc(100vh-8rem)] flex-col">
-      <div className="mb-4">
-        <h1 className="flex items-center gap-2 text-2xl font-bold tracking-tight">
-          <MessageCircle className="h-6 w-6 text-primary" />
-          Chat
+  // Admin thread list
+  if (isAdmin && !threadId) {
+    return (
+      <div className="mx-auto max-w-lg space-y-4">
+        <h1 className="flex items-center gap-2 text-2xl font-bold">
+          <Shield className="h-6 w-6 text-primary" />
+          Support inbox
         </h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Private messages between you two
+        <p className="text-sm text-muted-foreground">
+          Message members about loans, policies, and help.
         </p>
-      </div>
-
-      <div className="flex-1 space-y-3 overflow-y-auto rounded-2xl border border-border bg-card/50 p-4">
-        {messages.length === 0 ? (
-          <p className="py-12 text-center text-sm text-muted-foreground">
-            No messages yet. Say something nice ❤️
+        {threads.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            No threads yet. They appear when a user opens Chat.
           </p>
         ) : (
-          messages.map((m) => {
-            const mine = m.user_id === userId;
-            return (
-              <motion.div
-                key={m.id}
-                initial={{ opacity: 0, y: 8 }}
-                animate={{ opacity: m._optimistic ? 0.7 : 1, y: 0 }}
-                className={`flex ${mine ? "justify-end" : "justify-start"}`}
+          <div className="space-y-2">
+            {threads.map((t) => (
+              <button
+                key={t.id}
+                type="button"
+                onClick={() => openThread(t)}
+                className="w-full rounded-2xl border border-border bg-card px-4 py-3 text-left text-sm hover:bg-muted"
               >
-                <div
-                  className={`max-w-[80%] rounded-2xl px-4 py-2.5 text-sm ${
-                    mine
-                      ? "bg-primary text-primary-foreground"
-                      : "bg-muted text-foreground"
-                  }`}
-                >
-                  {!mine && (
-                    <p className="mb-0.5 text-[10px] font-medium opacity-70">
-                      {m.profiles?.full_name || "Partner"}
-                    </p>
-                  )}
-                  <p>{m.body}</p>
-                  <p
-                    className={`mt-1 text-[10px] ${
-                      mine
-                        ? "text-primary-foreground/70"
-                        : "text-muted-foreground"
-                    }`}
-                  >
-                    {m._optimistic ? "Sending…" : formatDate(m.created_at)}
-                  </p>
-                </div>
-              </motion.div>
-            );
-          })
+                <p className="font-medium">
+                  {t.subject || "Support"} · {t.user_id?.slice(0, 8)}…
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {t.last_message_at
+                    ? formatDate(t.last_message_at)
+                    : "No messages"}
+                </p>
+              </button>
+            ))}
+          </div>
         )}
+      </div>
+    );
+  }
+
+  return (
+    <div className="mx-auto flex h-[calc(100vh-8rem)] max-w-lg flex-col">
+      <div className="mb-3 flex items-center justify-between">
+        <h1 className="flex items-center gap-2 text-xl font-bold">
+          <MessageCircle className="h-5 w-5 text-primary" />
+          {isAdmin ? "Reply" : "Chat with support"}
+        </h1>
+        {isAdmin && (
+          <button
+            type="button"
+            onClick={() => {
+              setThreadId(null);
+              setMessages([]);
+            }}
+            className="text-xs text-primary"
+          >
+            All threads
+          </button>
+        )}
+      </div>
+
+      <div className="flex-1 space-y-2 overflow-y-auto rounded-2xl border border-border bg-card/50 p-3">
+        {messages.length === 0 && (
+          <p className="py-8 text-center text-sm text-muted-foreground">
+            {isAdmin
+              ? "No messages in this thread yet."
+              : "Ask admin anything — loans, deposits, or account help."}
+          </p>
+        )}
+        {messages.map((m) => {
+          const mine = m.sender_id === userId;
+          return (
+            <motion.div
+              key={m.id}
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              className={`flex ${mine ? "justify-end" : "justify-start"}`}
+            >
+              <div
+                className={`max-w-[85%] rounded-2xl px-3 py-2 text-sm ${
+                  m.is_system
+                    ? "bg-muted text-muted-foreground"
+                    : mine
+                      ? "bg-primary text-primary-foreground"
+                      : "bg-muted"
+                }`}
+              >
+                {m.is_from_admin && !mine && !m.is_system && (
+                  <p className="mb-0.5 text-[10px] font-semibold opacity-80">
+                    Admin
+                  </p>
+                )}
+                <p className="whitespace-pre-wrap">{m.body}</p>
+                <p className="mt-1 text-[10px] opacity-70">
+                  {formatDate(m.created_at)}
+                </p>
+              </div>
+            </motion.div>
+          );
+        })}
         <div ref={bottomRef} />
       </div>
 
       <form onSubmit={send} className="mt-3 flex gap-2">
         <input
-          type="text"
           value={text}
           onChange={(e) => setText(e.target.value)}
           placeholder="Type a message…"
-          className="flex-1 rounded-2xl border border-input bg-background px-4 py-3 text-sm outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
-          maxLength={500}
+          className="flex-1 rounded-2xl border border-input bg-background px-4 py-3 text-sm"
         />
         <button
           type="submit"
           disabled={sending || !text.trim()}
-          className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary text-primary-foreground disabled:opacity-50"
+          className="rounded-2xl bg-primary px-4 text-primary-foreground disabled:opacity-50"
         >
-          {sending ? (
-            <Loader2 className="h-5 w-5 animate-spin" />
-          ) : (
-            <Send className="h-5 w-5" />
-          )}
+          <Send className="h-5 w-5" />
         </button>
       </form>
     </div>

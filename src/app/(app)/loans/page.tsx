@@ -46,6 +46,9 @@ export default function LoansPage() {
     setLoading(true);
     setError(null);
     try {
+      // Best-effort: process overdue + send due reminders
+      fetch("/api/loans/process-due", { method: "POST" }).catch(() => {});
+      fetch("/api/loans/reminders", { method: "POST" }).catch(() => {});
       const res = await fetch("/api/loans");
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to load");
