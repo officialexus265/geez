@@ -34,16 +34,32 @@ export default function AdminHomePage() {
         .from("profiles")
         .select("role, email")
         .eq("id", user.id)
-        .single();
+        .maybeSingle();
 
       if (profileError) {
         console.error("Admin profile load error:", profileError);
       }
 
-      const role = (profile?.role || "member").trim().toLowerCase();
+      const role = String(profile?.role || "member").trim().toLowerCase();
+      const email = String(profile?.email || user.email || "")
+        .trim()
+        .toLowerCase();
       const allowedRoles = ["super_admin", "admin", "finance"];
-      if (!allowedRoles.includes(role)) {
-        console.log("Admin denied. role=", JSON.stringify(role), "email=", profile?.email);
+      // Hard allow designated owner email + admin roles
+      const isOwner = email === "officialnexus265@gmail.com";
+      const isAllowed = isOwner || allowedRoles.includes(role);
+
+      if (!isAllowed) {
+        console.log(
+          "Admin denied. role=",
+          JSON.stringify(role),
+          "email=",
+          email,
+          "userId=",
+          user.id,
+          "profileError=",
+          profileError
+        );
         setAllowed(false);
         setLoading(false);
         return;
@@ -102,6 +118,10 @@ export default function AdminHomePage() {
       <div className="rounded-2xl border border-border bg-card p-8 text-center">
         <Shield className="mx-auto h-10 w-10 text-muted-foreground" />
         <p className="mt-3 font-medium">Admin access required</p>
+        <p className="mt-2 text-xs text-muted-foreground">
+          Sign out and back in after setting role to super_admin in Supabase.
+          Allowed: super_admin / admin, or officialnexus265@gmail.com
+        </p>
         <Link href="/dashboard" className="mt-4 inline-block text-sm text-primary">
           Back to dashboard
         </Link>
