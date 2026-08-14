@@ -5,6 +5,7 @@ import { HideBalanceProvider } from "@/components/providers/hide-balance-provide
 import { SplashScreen } from "@/components/splash-screen";
 import { DeepLinkHandler } from "@/components/deep-link-handler";
 import { ForceUpdateGate } from "@/components/force-update-gate";
+import { ClearStaleCache } from "@/components/clear-stale-cache";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -148,23 +149,14 @@ export default function RootLayout({
           enableSystem
           disableTransitionOnChange={false}
         >
+          <ClearStaleCache />
           <SplashScreen />
           <DeepLinkHandler />
           <ForceUpdateGate>
             <HideBalanceProvider>{children}</HideBalanceProvider>
           </ForceUpdateGate>
         </ThemeProvider>
-        <script
-          dangerouslySetInnerHTML={{
-            __html: `
-              if ('serviceWorker' in navigator) {
-                window.addEventListener('load', () => {
-                  navigator.serviceWorker.register('/sw.js').catch(() => {});
-                });
-              }
-            `,
-          }}
-        />
+        {/* Service worker disabled — was caching old landing page in Capacitor WebView */}
       </body>
     </html>
   );
