@@ -19,6 +19,8 @@ function LandingContent() {
   const searchParams = useSearchParams();
   const autoDownload = searchParams.get("download") === "1";
   const [apkUrl, setApkUrl] = useState<string | null>(null);
+  const [logoUrl, setLogoUrl] = useState<string | null>(null);
+  const [brandName, setBrandName] = useState("GEEZ");
   const [downloading, setDownloading] = useState(false);
   const [shareHint, setShareHint] = useState<string | null>(null);
 
@@ -28,10 +30,14 @@ function LandingContent() {
         const supabase = createClient();
         const { data } = await supabase
           .from("app_settings")
-          .select("apk_download_url, og_image_url, brand_name")
+          .select("apk_download_url, og_image_url, logo_url, app_name, brand_name")
           .eq("id", "main")
           .maybeSingle();
         if (data?.apk_download_url) setApkUrl(data.apk_download_url);
+        if (data?.logo_url) setLogoUrl(data.logo_url);
+        if (data?.app_name || (data as any)?.brand_name) {
+          setBrandName(data.app_name || (data as any).brand_name || "GEEZ");
+        }
       } catch {
         // ignore
       }
@@ -51,17 +57,17 @@ function LandingContent() {
 
   async function handleShare() {
     const origin =
-      typeof window !== "undefined" ? window.location.origin : "https://geez-lac.vercel.app";
+      typeof window !== "undefined"
+        ? window.location.origin
+        : "https://geez-lac.vercel.app";
     const shareUrl = `${origin}/?download=1`;
-    const shareData = {
-      title: "GEEZ — Savings",
-      text: "Save smarter with GEEZ. Open the link to get the app.",
-      url: shareUrl,
-    };
-
     try {
       if (navigator.share) {
-        await navigator.share(shareData);
+        await navigator.share({
+          title: `${brandName} — Savings`,
+          text: "Save smarter with GEEZ. Open the link to get the app.",
+          url: shareUrl,
+        });
         setShareHint("Shared");
       } else {
         await navigator.clipboard.writeText(shareUrl);
@@ -88,6 +94,18 @@ function LandingContent() {
     setTimeout(() => setDownloading(false), 2000);
   }
 
+  const Logo = ({ className = "h-10 w-10" }: { className?: string }) =>
+    logoUrl ? (
+      // eslint-disable-next-line @next/next/no-img-element
+      <img
+        src={logoUrl}
+        alt={brandName}
+        className={`${className} rounded-2xl object-contain`}
+      />
+    ) : (
+      <Heart className={`${className} fill-current`} />
+    );
+
   return (
     <div className="min-h-screen flex flex-col bg-background text-foreground overflow-hidden">
       <div className="pointer-events-none fixed inset-0 overflow-hidden">
@@ -97,10 +115,17 @@ function LandingContent() {
 
       <header className="relative z-10 flex items-center justify-between px-6 py-5">
         <div className="flex items-center gap-2">
-          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-lg">
-            <Heart className="h-5 w-5 fill-current" />
+          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/10 text-primary overflow-hidden">
+            {logoUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={logoUrl} alt="" className="h-9 w-9 object-contain" />
+            ) : (
+              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary text-primary-foreground">
+                <Heart className="h-5 w-5 fill-current" />
+              </div>
+            )}
           </div>
-          <span className="text-xl font-bold tracking-tight">GEEZ</span>
+          <span className="text-xl font-bold tracking-tight">{brandName}</span>
         </div>
         <Link
           href="/login"
@@ -121,9 +146,9 @@ function LandingContent() {
             initial={{ scale: 0.8, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
             transition={{ delay: 0.15, duration: 0.6 }}
-            className="mx-auto mb-6 flex h-20 w-20 items-center justify-center rounded-3xl bg-primary/10 text-primary"
+            className="mx-auto mb-6 flex h-20 w-20 items-center justify-center rounded-3xl bg-primary/10 text-primary overflow-hidden"
           >
-            <Heart className="h-10 w-10 fill-current" />
+            <Logo className="h-12 w-12" />
           </motion.div>
 
           <h1 className="mb-4 text-4xl font-bold tracking-tight sm:text-5xl">
@@ -207,7 +232,7 @@ function LandingContent() {
       </main>
 
       <footer className="relative z-10 py-6 text-center text-xs text-muted-foreground">
-        GEEZ · Save with purpose
+        {brandName} · Save with purpose
       </footer>
     </div>
   );
