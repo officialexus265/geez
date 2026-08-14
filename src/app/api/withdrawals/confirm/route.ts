@@ -6,10 +6,11 @@ import {
   initiateMobileMoneyPayout,
   MOBILE_MONEY_OPERATORS,
 } from "@/lib/paychangu";
+import { randomUUID } from "crypto";
 
 /**
  * POST /api/withdrawals/confirm
- * Verify email code + PIN → mark processing, fee ledger, debit goal if any
+ * Verify email code + PIN → fee ledger, debit goal, attempt payout
  */
 export async function POST(request: NextRequest) {
   try {
@@ -51,10 +52,12 @@ export async function POST(request: NextRequest) {
     }
 
     if (String(w.confirmation_code) !== String(code).trim()) {
-      return NextResponse.json({ error: "Invalid confirmation code" }, { status: 400 });
+      return NextResponse.json(
+        { error: "Invalid confirmation code" },
+        { status: 400 }
+      );
     }
 
-    // PIN optional if user has one set
     const { data: profile } = await admin
       .from("profiles")
       .select("pin_hash, email, full_name")
@@ -65,13 +68,13 @@ export async function POST(request: NextRequest) {
       if (!pin) {
         return NextResponse.json({ error: "PIN required" }, { status: 400 });
       }
-      const ok = await verifyPin(pin, profile.pin_hash);
-      if (!ok) {
+      // Stored as "hash:salt"
+      const [storedHash, salt] = String(profile.pin_hash).split(":");
+      if (!salt || !verifyPin(pin, storedHash, salt)) {
         return NextResponse.json({ error: "Incorrect PIN" }, { status: 400 });
       }
     }
 
-    // Debit goal balance if source is goal
     if (w.source_type === "goal" && w.goal_id) {
       const { data: goal } = await admin
         .from("goals")
@@ -93,7 +96,6 @@ export async function POST(request: NextRequest) {
         .eq("id", w.goal_id);
     }
 
-    // Fee ledger
     if (Number(w.fee_amount) > 0) {
       const feeType = w.is_early_exit
         ? "early_exit_6"
@@ -106,7 +108,11 @@ export async function POST(request: NextRequest) {
         goal_id: w.goal_id || null,
         fee_type: feeType,
         amount: w.fee_amount,
-        meta: { fee_percent: w.fee_percent, gross: w.amount, net: w.net_amount },
+        meta: {
+          fee_percent: w.fee_percent,
+          gross: w.amount,
+          net: w.net_amount,
+        },
       });
     }
 
@@ -119,29 +125,28 @@ export async function POST(request: NextRequest) {
       })
       .eq("id", w.id);
 
-    // Attempt PayChangu payout if configured
     try {
-      const operator =
+      const operatorRef =
         w.destination_type === "airtel_money"
-          ? MOBILE_MONEY_OPERATORS?.AIRTEL || "airtel"
-          : MOBILE_MONEY_OPERATORS?.TNM || "tnm";
+          ? MOBILE_MONEY_OPERATORS.airtel_money
+          : MOBILE_MONEY_OPERATORS.tnm_mpamba;
 
-      if (typeof initiateMobileMoneyPayout === "function") {
-        await initiateMobileMoneyPayout({
-          amount: Number(w.net_amount ?? w.amount),
-          phone: w.phone_number,
-          operator,
-          reference: `GEEZ-WD-${w.id.slice(0, 8)}`,
-        });
-      }
+      await initiateMobileMoneyPayout({
+        amount: Number(w.net_amount ?? w.amount),
+        mobile: w.phone_number,
+        mobile_money_operator_ref_id: operatorRef,
+        charge_id: randomUUID(),
+        email: profile?.email || undefined,
+        first_name: profile?.full_name?.split(" ")[0],
+        last_name: profile?.full_name?.split(" ").slice(1).join(" ") || undefined,
+      });
 
       await admin
         .from("withdrawals")
         .update({ status: "success", updated_at: new Date().toISOString() })
         .eq("id", w.id);
     } catch (payoutErr) {
-      console.error("Payout error (marked processing):", payoutErr);
-      // stays processing for manual admin follow-up
+      console.error("Payout error (left as processing):", payoutErr);
     }
 
     return NextResponse.json({

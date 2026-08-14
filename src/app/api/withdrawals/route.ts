@@ -189,7 +189,7 @@ export async function POST(request: NextRequest) {
       try {
         await sendSMS({
           to: me.phone || phone_number,
-          message: msg,
+          content: msg,
         });
       } catch (e) {
         console.error("SMS failed", e);
