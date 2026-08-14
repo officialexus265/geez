@@ -33,11 +33,13 @@ function LandingContent() {
           .select("apk_download_url, og_image_url, logo_url, app_name, brand_name")
           .eq("id", "main")
           .maybeSingle();
-        if (data?.apk_download_url) setApkUrl(data.apk_download_url);
-        if (data?.logo_url) setLogoUrl(data.logo_url);
-        if (data?.app_name || (data as any)?.brand_name) {
-          setBrandName(data.app_name || (data as any).brand_name || "GEEZ");
-        }
+        if (!data) return;
+        if (data.apk_download_url) setApkUrl(data.apk_download_url);
+        if (data.logo_url) setLogoUrl(data.logo_url);
+        const name =
+          (data as { app_name?: string; brand_name?: string }).app_name ||
+          (data as { brand_name?: string }).brand_name;
+        if (name) setBrandName(name);
       } catch {
         // ignore
       }
