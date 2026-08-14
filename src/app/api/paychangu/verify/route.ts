@@ -102,7 +102,8 @@ export async function POST(request: NextRequest) {
         .update(extras)
         .eq("tx_ref", tx_ref);
 
-      // Goal bump (once)
+      // Credit goal or general balance (once when first marked success)
+      const amt = Number(updated.amount);
       if ((updated as any).goal_id) {
         const { data: goal } = await supabase
           .from("goals")
@@ -111,8 +112,7 @@ export async function POST(request: NextRequest) {
           .single();
 
         if (goal) {
-          const newAmount =
-            Number(goal.current_amount) + Number(updated.amount);
+          const newAmount = Number(goal.current_amount) + amt;
           await supabase
             .from("goals")
             .update({
@@ -121,6 +121,20 @@ export async function POST(request: NextRequest) {
               updated_at: new Date().toISOString(),
             })
             .eq("id", goal.id);
+        }
+      } else if ((updated as any).depositor_id) {
+        const { data: prof } = await supabase
+          .from("profiles")
+          .select("general_balance")
+          .eq("id", (updated as any).depositor_id)
+          .single();
+        if (prof) {
+          await supabase
+            .from("profiles")
+            .update({
+              general_balance: Number(prof.general_balance || 0) + amt,
+            })
+            .eq("id", (updated as any).depositor_id);
         }
       }
 

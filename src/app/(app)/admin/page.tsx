@@ -16,6 +16,7 @@ export default function AdminHomePage() {
     dualPairs: 0,
     totalDeposits: 0,
     pendingTx: 0,
+    totalFees: 0,
   });
 
   useEffect(() => {
@@ -29,14 +30,20 @@ export default function AdminHomePage() {
         return;
       }
 
-      const { data: profile } = await supabase
+      const { data: profile, error: profileError } = await supabase
         .from("profiles")
-        .select("role")
+        .select("role, email")
         .eq("id", user.id)
         .single();
 
-      const role = profile?.role || "member";
-      if (role !== "super_admin" && role !== "admin" && role !== "finance") {
+      if (profileError) {
+        console.error("Admin profile load error:", profileError);
+      }
+
+      const role = (profile?.role || "member").trim().toLowerCase();
+      const allowedRoles = ["super_admin", "admin", "finance"];
+      if (!allowedRoles.includes(role)) {
+        console.log("Admin denied. role=", JSON.stringify(role), "email=", profile?.email);
         setAllowed(false);
         setLoading(false);
         return;
@@ -71,7 +78,12 @@ export default function AdminHomePage() {
         dualPairs: pairs || 0,
         totalDeposits,
         pendingTx: pendingTx || 0,
+        totalFees: 0,
       });
+
+      const { data: fees } = await supabase.from("fee_ledger").select("amount");
+      const totalFees = (fees || []).reduce((s: number, f: any) => s + Number(f.amount), 0);
+      setStats((prev) => ({ ...prev, totalFees }));
       setLoading(false);
     }
     load();
@@ -117,6 +129,11 @@ export default function AdminHomePage() {
       label: "Pending transactions",
       value: String(stats.pendingTx),
       icon: Landmark,
+    },
+    {
+      label: "Platform fees collected",
+      value: formatMWK(stats.totalFees),
+      icon: Wallet,
     },
   ];
 

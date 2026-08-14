@@ -127,6 +127,20 @@ export async function POST(request: NextRequest) {
             })
             .eq("id", goal.id);
         }
+      } else if (tx && (tx as any).depositor_id) {
+        const { data: prof } = await supabase
+          .from("profiles")
+          .select("general_balance")
+          .eq("id", (tx as any).depositor_id)
+          .single();
+        if (prof) {
+          await supabase
+            .from("profiles")
+            .update({
+              general_balance: Number(prof.general_balance || 0) + Number(tx.amount),
+            })
+            .eq("id", (tx as any).depositor_id);
+        }
       }
 
       const { data: profiles } = await supabase
