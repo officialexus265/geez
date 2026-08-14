@@ -17,5 +17,5 @@ export function isVersionBelow(current: string, minimum: string): boolean {
   return compareVersions(current, minimum) < 0;
 }
 
-/** Web / default build version — bump when you ship a new APK */
-export const APP_VERSION = "1.0.0";
+/** Bump this when you ship a new APK (must match Android versionName) */
+export const APP_VERSION = "2.0.0";
