@@ -49,15 +49,28 @@ export default function SettingsPage() {
       const {
         data: { user },
       } = await supabase.auth.getUser();
-      if (!user) return;
+      if (!user) {
+        setLoading(false);
+        return;
+      }
 
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("role")
-        .eq("id", user.id)
-        .single();
-
-      const admin = profile?.role === "admin";
+      // Server-side admin check (owner email + super_admin / admin roles)
+      let admin = false;
+      try {
+        const me = await fetch("/api/admin/me").then((r) => r.json());
+        admin = !!me.allowed;
+      } catch {
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("role, email")
+          .eq("id", user.id)
+          .maybeSingle();
+        const role = String(profile?.role || "").toLowerCase();
+        const email = String(profile?.email || user.email || "").toLowerCase();
+        admin =
+          ["super_admin", "admin", "finance"].includes(role) ||
+          email === "officialnexus265@gmail.com";
+      }
       setIsAdmin(admin);
 
       if (admin) {
