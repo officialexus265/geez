@@ -17,28 +17,88 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
-export const metadata: Metadata = {
-  title: {
-    default: "GEEZ — Our Shared Savings",
-    template: "%s · GEEZ",
-  },
-  description:
-    "A private, playful shared savings vault powered by PayChangu. Built with love.",
-  applicationName: "GEEZ",
-  manifest: "/manifest.json",
-  appleWebApp: {
-    capable: true,
-    statusBarStyle: "black-translucent",
-    title: "GEEZ",
-  },
-  openGraph: {
-    type: "website",
-    locale: "en_MW",
-    siteName: "GEEZ",
-    title: "GEEZ — Our Shared Savings",
-    description: "A private, playful shared savings vault powered by PayChangu.",
-  },
-};
+const APP_URL =
+  process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "") ||
+  "https://geez-lac.vercel.app";
+
+async function getBranding() {
+  try {
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+    if (!url || !key) return null;
+
+    const res = await fetch(
+      `${url}/rest/v1/app_settings?id=eq.main&select=app_name,og_image_url,logo_url,favicon_url`,
+      {
+        headers: {
+          apikey: key,
+          Authorization: `Bearer ${key}`,
+        },
+        next: { revalidate: 60 },
+      }
+    );
+    if (!res.ok) return null;
+    const rows = await res.json();
+    return rows?.[0] || null;
+  } catch {
+    return null;
+  }
+}
+
+export async function generateMetadata(): Promise<Metadata> {
+  const branding = await getBranding();
+  const title = branding?.app_name
+    ? `${branding.app_name} — Savings`
+    : "GEEZ — Savings";
+  const description =
+    "Personal and dual savings. Goals, secure PayChangu deposits, and more.";
+
+  const ogImage =
+    branding?.og_image_url ||
+    branding?.logo_url ||
+    `${APP_URL}/icons/icon-512.png`;
+
+  return {
+    title: {
+      default: title,
+      template: "%s · GEEZ",
+    },
+    description,
+    applicationName: branding?.app_name || "GEEZ",
+    manifest: "/manifest.json",
+    metadataBase: new URL(APP_URL),
+    appleWebApp: {
+      capable: true,
+      statusBarStyle: "black-translucent",
+      title: branding?.app_name || "GEEZ",
+    },
+    openGraph: {
+      type: "website",
+      locale: "en_MW",
+      url: APP_URL,
+      siteName: branding?.app_name || "GEEZ",
+      title,
+      description,
+      images: [
+        {
+          url: ogImage,
+          width: 1200,
+          height: 630,
+          alt: branding?.app_name || "GEEZ",
+        },
+      ],
+    },
+    twitter: {
+      card: "summary_large_image",
+      title,
+      description,
+      images: [ogImage],
+    },
+    icons: branding?.favicon_url
+      ? { icon: branding.favicon_url }
+      : undefined,
+  };
+}
 
 export const viewport: Viewport = {
   themeColor: [
@@ -72,7 +132,9 @@ export default function RootLayout({
         >
           <SplashScreen />
           <DeepLinkHandler />
-          <ForceUpdateGate><HideBalanceProvider>{children}</HideBalanceProvider></ForceUpdateGate>
+          <ForceUpdateGate>
+            <HideBalanceProvider>{children}</HideBalanceProvider>
+          </ForceUpdateGate>
         </ThemeProvider>
         <script
           dangerouslySetInnerHTML={{
