@@ -9,10 +9,13 @@ import {
   MessageCircle,
   ArrowDownToLine,
   User,
+  Shield,
+  Settings,
+  Users,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-const navItems = [
+const memberNav = [
   { href: "/dashboard", label: "Home", icon: Home },
   { href: "/history", label: "History", icon: History },
   { href: "/deposit", label: "Deposit", icon: ArrowDownToLine, primary: true },
@@ -20,8 +23,16 @@ const navItems = [
   { href: "/profile", label: "Profile", icon: User },
 ];
 
-export function BottomNav() {
+const adminNav = [
+  { href: "/admin", label: "Home", icon: Shield },
+  { href: "/chat", label: "Inbox", icon: MessageCircle },
+  { href: "/settings", label: "Settings", icon: Settings },
+  { href: "/profile", label: "Account", icon: User },
+];
+
+export function BottomNav({ isStaff = false }: { isStaff?: boolean }) {
   const pathname = usePathname();
+  const navItems = isStaff ? adminNav : memberNav;
 
   return (
     <nav className="fixed bottom-0 left-0 right-0 z-50 border-t border-border bg-card/95 backdrop-blur-lg safe-area-pb">
@@ -30,8 +41,9 @@ export function BottomNav() {
           const isActive =
             pathname === item.href || pathname.startsWith(item.href + "/");
           const Icon = item.icon;
+          const primary = "primary" in item && item.primary;
 
-          if (item.primary) {
+          if (primary) {
             return (
               <Link
                 key={item.href}

@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { Loader2, Copy, Check, Users, QrCode } from "lucide-react";
 import Link from "next/link";
+import { isStaffAccount } from "@/lib/staff";
 
 function randomCode() {
   const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -30,9 +31,15 @@ export default function DualSetupPage() {
 
       const { data: profile } = await supabase
         .from("profiles")
-        .select("id, dual_pair_id, account_type")
+        .select("id, dual_pair_id, account_type, role, email")
         .eq("id", user.id)
         .single();
+
+      if (isStaffAccount(profile?.role, profile?.email || user.email)) {
+        setError("Staff/admin accounts cannot join or create dual savings.");
+        setLoading(false);
+        return;
+      }
 
       if (profile?.dual_pair_id) {
         const { data: pair } = await supabase

@@ -320,47 +320,12 @@ export default function ProfilePage() {
           </span>
         </button>
       )}
-<a
-        href="/referrals"
-        className="flex w-full items-center justify-between rounded-2xl border border-border bg-card px-4 py-3.5 text-sm font-medium transition hover:bg-muted"
-      >
-        <span>Referrals</span>
-      </a>
-      <a
-        href="/loans"
-        className="flex w-full items-center justify-between rounded-2xl border border-border bg-card px-4 py-3.5 text-sm font-medium transition hover:bg-muted"
-      >
-        <span>Loans</span>
-      </a>
 
-      {(accountType === "dual" || !!dualPairId) && (
+      {isAdmin ? (
         <>
-          <a
-            href="/dual/setup"
-            className="flex w-full items-center justify-between rounded-2xl border border-border bg-card px-4 py-3.5 text-sm font-medium transition hover:bg-muted"
-          >
-            <span>Dual savings setup</span>
-          </a>
-          <a
-            href="/dual/leave"
-            className="flex w-full items-center justify-between rounded-2xl border border-border bg-card px-4 py-3.5 text-sm font-medium transition hover:bg-muted"
-          >
-            <span>Leave dual account</span>
-          </a>
-        </>
-      )}
-
-      {accountType !== "dual" && !dualPairId && (
-        <a
-          href="/dual/setup"
-          className="flex w-full items-center justify-between rounded-2xl border border-border bg-card px-4 py-3.5 text-sm font-medium transition hover:bg-muted"
-        >
-          <span>Start dual savings</span>
-        </a>
-      )}
-
-      {isAdmin && (
-        <>
+          <p className="rounded-2xl border border-border bg-muted/40 px-4 py-3 text-xs text-muted-foreground">
+            Staff accounts are admin-only. Member features (deposit, goals, dual, loans) are not available on this login.
+          </p>
           <a
             href="/admin"
             className="flex w-full items-center justify-between rounded-2xl border border-border bg-card px-4 py-3.5 text-sm font-medium transition hover:bg-muted"
@@ -371,17 +336,61 @@ export default function ProfilePage() {
             href="/settings"
             className="flex w-full items-center justify-center gap-2 rounded-2xl border border-border bg-card py-3.5 text-sm font-medium transition hover:bg-muted"
           >
-            Branding & Settings (Admin)
+            Branding & Settings
+          </a>
+          <a
+            href="/chat"
+            className="flex w-full items-center justify-center gap-2 rounded-2xl border border-border bg-card py-3.5 text-sm font-medium transition hover:bg-muted"
+          >
+            Support inbox
+          </a>
+        </>
+      ) : (
+        <>
+          <a
+            href="/referrals"
+            className="flex w-full items-center justify-between rounded-2xl border border-border bg-card px-4 py-3.5 text-sm font-medium transition hover:bg-muted"
+          >
+            <span>Referrals</span>
+          </a>
+          <a
+            href="/loans"
+            className="flex w-full items-center justify-between rounded-2xl border border-border bg-card px-4 py-3.5 text-sm font-medium transition hover:bg-muted"
+          >
+            <span>Loans</span>
+          </a>
+          {(accountType === "dual" || !!dualPairId) ? (
+            <>
+              <a
+                href="/dual/setup"
+                className="flex w-full items-center justify-between rounded-2xl border border-border bg-card px-4 py-3.5 text-sm font-medium transition hover:bg-muted"
+              >
+                <span>Dual savings setup</span>
+              </a>
+              <a
+                href="/dual/leave"
+                className="flex w-full items-center justify-between rounded-2xl border border-border bg-card px-4 py-3.5 text-sm font-medium transition hover:bg-muted"
+              >
+                <span>Leave dual account</span>
+              </a>
+            </>
+          ) : (
+            <a
+              href="/dual/setup"
+              className="flex w-full items-center justify-between rounded-2xl border border-border bg-card px-4 py-3.5 text-sm font-medium transition hover:bg-muted"
+            >
+              <span>Start dual savings</span>
+            </a>
+          )}
+          <a
+            href="/about"
+            className="flex w-full items-center justify-center gap-2 rounded-2xl border border-border bg-card py-3.5 text-sm font-medium transition hover:bg-muted"
+          >
+            About GEEZ
           </a>
         </>
       )}
 
-      <a
-        href="/about"
-        className="flex w-full items-center justify-center gap-2 rounded-2xl border border-border bg-card py-3.5 text-sm font-medium transition hover:bg-muted"
-      >
-        About GEEZ
-      </a>
 
       <button
         onClick={handleSignOut}
