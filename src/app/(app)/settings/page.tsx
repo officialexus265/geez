@@ -369,18 +369,23 @@ export default function SettingsPage() {
       </section>
 
       
-      {/* Partner recovery */}
+      {/* Member password recovery (platform admin tool — not dual partner) */}
       <section className="space-y-3">
         <h2 className="flex items-center gap-2 text-base font-semibold">
           <Shield className="h-4 w-4 text-primary" />
-          Partner account recovery
+          Member password recovery
         </h2>
         <p className="text-sm text-muted-foreground">
-          If your partner lost their password, send them a reset link.
+          Send a password reset email to any member account. This is not a dual
+          link — it only helps users who lost access.
         </p>
         <div className="space-y-2">
           {profiles
-            .filter((p) => p.id)
+            .filter((p) => {
+              const role = String(p.role || "member").toLowerCase();
+              const staff = ["super_admin", "admin", "finance", "support", "ops"];
+              return p.id && !staff.includes(role);
+            })
             .map((p) => (
               <button
                 key={p.id}
@@ -414,6 +419,12 @@ export default function SettingsPage() {
                 <span className="text-xs font-medium text-primary">Send reset</span>
               </button>
             ))}
+          {profiles.filter((p) => {
+            const role = String(p.role || "member").toLowerCase();
+            return !["super_admin", "admin", "finance", "support", "ops"].includes(role);
+          }).length === 0 && (
+            <p className="text-sm text-muted-foreground">No member accounts yet.</p>
+          )}
         </div>
       </section>
 
@@ -424,7 +435,7 @@ export default function SettingsPage() {
           Chat notification sound
         </h2>
         <p className="text-sm text-muted-foreground">
-          Upload an audio file (mp3, wav, ogg). Plays for both of you when a new message arrives.
+          Upload an audio file (mp3, wav, ogg). Plays when a new support chat message arrives.
         </p>
         <div className="rounded-2xl border border-border bg-card p-5">
           {ringtoneUrl ? (
