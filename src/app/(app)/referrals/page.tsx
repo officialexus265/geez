@@ -25,6 +25,10 @@ export default function ReferralsPage() {
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
+  const [wdAmount, setWdAmount] = useState("");
+  const [wdPhone, setWdPhone] = useState("");
+  const [wdDest, setWdDest] = useState<"airtel_money" | "tnm_mpamba">("airtel_money");
+  const [wdBusy, setWdBusy] = useState(false);
 
   async function load() {
     const supabase = createClient();
@@ -141,6 +145,86 @@ export default function ReferralsPage() {
           {earnings.length === 1 ? "" : "s"}
         </p>
       </div>
+
+
+      {balance >= 100 && (
+        <form
+          onSubmit={async (e) => {
+            e.preventDefault();
+            setWdBusy(true);
+            setError(null);
+            setMessage(null);
+            try {
+              const res = await fetch("/api/referrals/withdraw", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  amount: Number(wdAmount),
+                  phone_number: wdPhone,
+                  destination_type: wdDest,
+                }),
+              });
+              const data = await res.json();
+              if (!res.ok) throw new Error(data.error || "Withdraw failed");
+              setMessage(`Sent ${wdAmount} to your phone`);
+              setWdAmount("");
+              await load();
+            } catch (err) {
+              setError(err instanceof Error ? err.message : "Failed");
+            } finally {
+              setWdBusy(false);
+            }
+          }}
+          className="space-y-3 rounded-2xl border border-border bg-card p-5"
+        >
+          <h2 className="font-semibold">Withdraw referral balance</h2>
+          <p className="text-xs text-muted-foreground">Minimum MWK 100 · Airtel or TNM</p>
+          <input
+            type="number"
+            min={100}
+            max={balance}
+            value={wdAmount}
+            onChange={(e) => setWdAmount(e.target.value)}
+            placeholder="Amount"
+            className="w-full rounded-xl border border-input bg-background px-4 py-3 text-sm"
+            required
+          />
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={() => setWdDest("airtel_money")}
+              className={`rounded-xl border p-2 text-sm ${
+                wdDest === "airtel_money" ? "border-primary bg-primary/10" : "border-border"
+              }`}
+            >
+              Airtel
+            </button>
+            <button
+              type="button"
+              onClick={() => setWdDest("tnm_mpamba")}
+              className={`rounded-xl border p-2 text-sm ${
+                wdDest === "tnm_mpamba" ? "border-primary bg-primary/10" : "border-border"
+              }`}
+            >
+              TNM
+            </button>
+          </div>
+          <input
+            value={wdPhone}
+            onChange={(e) => setWdPhone(e.target.value)}
+            placeholder="Phone number"
+            className="w-full rounded-xl border border-input bg-background px-4 py-3 text-sm"
+            required
+          />
+          <button
+            type="submit"
+            disabled={wdBusy}
+            className="w-full rounded-2xl bg-primary py-3 text-sm font-semibold text-primary-foreground disabled:opacity-50"
+          >
+            {wdBusy ? "Sending…" : "Withdraw to mobile money"}
+          </button>
+        </form>
+      )}
 
       <form onSubmit={saveUsername} className="space-y-3 rounded-2xl border border-border bg-card p-5">
         <h2 className="font-semibold">Your referral username</h2>

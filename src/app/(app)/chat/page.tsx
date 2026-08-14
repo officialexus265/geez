@@ -63,6 +63,39 @@ export default function ChatPage() {
 
   async function ensureMemberThread(uid: string) {
     const supabase = createClient();
+
+    // Dual pair → one shared support thread for the couple
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("dual_pair_id, account_type")
+      .eq("id", uid)
+      .single();
+
+    if (profile?.dual_pair_id && profile.account_type === "dual") {
+      let { data: thread } = await supabase
+        .from("chat_threads")
+        .select("*")
+        .eq("dual_pair_id", profile.dual_pair_id)
+        .eq("thread_type", "dual")
+        .maybeSingle();
+
+      if (!thread) {
+        const { data: created, error } = await supabase
+          .from("chat_threads")
+          .insert({
+            dual_pair_id: profile.dual_pair_id,
+            user_id: null,
+            thread_type: "dual",
+            subject: "Dual support",
+          })
+          .select()
+          .single();
+        if (error) throw error;
+        thread = created;
+      }
+      return thread;
+    }
+
     let { data: thread } = await supabase
       .from("chat_threads")
       .select("*")
