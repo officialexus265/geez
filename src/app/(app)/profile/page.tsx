@@ -35,6 +35,9 @@ export default function ProfilePage() {
   const [error, setError] = useState<string | null>(null);
   const [bioOn, setBioOn] = useState(false);
   const [bioSupported, setBioSupported] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [accountType, setAccountType] = useState<string>("personal");
+  const [dualPairId, setDualPairId] = useState<string | null>(null);
 
   useEffect(() => {
     async function load() {
@@ -49,7 +52,7 @@ export default function ProfilePage() {
 
       const { data: profile } = await supabase
         .from("profiles")
-        .select("full_name, email, phone, pin_hash, avatar_url")
+        .select("full_name, email, phone, pin_hash, avatar_url, role, account_type, dual_pair_id")
         .eq("id", user.id)
         .single();
 
@@ -59,6 +62,17 @@ export default function ProfilePage() {
         setPhone(profile.phone || "");
         setHasPin(!!profile.pin_hash);
         setAvatarUrl(profile.avatar_url || null);
+        setAccountType(profile.account_type || "personal");
+        setDualPairId(profile.dual_pair_id || null);
+
+        const role = (profile.role || "member").toLowerCase().trim();
+        const emailLower = (profile.email || user.email || "").toLowerCase();
+        const adminRoles = ["super_admin", "admin", "finance", "support"];
+        // Admin UI only for admin roles (or the designated super admin email as fallback)
+        setIsAdmin(
+          adminRoles.includes(role) ||
+            emailLower === "officialnexus265@gmail.com"
+        );
       }
       setLoading(false);
       setBioOn(isBiometricsEnabled());
@@ -308,45 +322,65 @@ export default function ProfilePage() {
       )}
 <a
         href="/referrals"
-          className="flex w-full items-center justify-between rounded-2xl border border-border bg-card px-4 py-3.5 text-sm font-medium transition hover:bg-muted"
-        >
-          <span>Referrals</span>
-        </a>
-        <a
-          href="/loans"
-          className="flex w-full items-center justify-between rounded-2xl border border-border bg-card px-4 py-3.5 text-sm font-medium transition hover:bg-muted"
-        >
-          <span>Loans</span>
-        </a>
+        className="flex w-full items-center justify-between rounded-2xl border border-border bg-card px-4 py-3.5 text-sm font-medium transition hover:bg-muted"
+      >
+        <span>Referrals</span>
+      </a>
+      <a
+        href="/loans"
+        className="flex w-full items-center justify-between rounded-2xl border border-border bg-card px-4 py-3.5 text-sm font-medium transition hover:bg-muted"
+      >
+        <span>Loans</span>
+      </a>
+
+      {(accountType === "dual" || !!dualPairId) && (
+        <>
+          <a
+            href="/dual/setup"
+            className="flex w-full items-center justify-between rounded-2xl border border-border bg-card px-4 py-3.5 text-sm font-medium transition hover:bg-muted"
+          >
+            <span>Dual savings setup</span>
+          </a>
+          <a
+            href="/dual/leave"
+            className="flex w-full items-center justify-between rounded-2xl border border-border bg-card px-4 py-3.5 text-sm font-medium transition hover:bg-muted"
+          >
+            <span>Leave dual account</span>
+          </a>
+        </>
+      )}
+
+      {accountType !== "dual" && !dualPairId && (
         <a
           href="/dual/setup"
           className="flex w-full items-center justify-between rounded-2xl border border-border bg-card px-4 py-3.5 text-sm font-medium transition hover:bg-muted"
         >
-          <span>Dual savings setup</span>
+          <span>Start dual savings</span>
         </a>
-        <a
-          href="/dual/leave"
-          className="flex w-full items-center justify-between rounded-2xl border border-border bg-card px-4 py-3.5 text-sm font-medium transition hover:bg-muted"
-        >
-          <span>Leave dual account</span>
-        </a>
-        <a
-          href="/admin"
-          className="flex w-full items-center justify-between rounded-2xl border border-border bg-card px-4 py-3.5 text-sm font-medium transition hover:bg-muted"
-        >
-          <span>Admin panel</span>
-        </a>
-        <a
-          href="/about"
+      )}
+
+      {isAdmin && (
+        <>
+          <a
+            href="/admin"
+            className="flex w-full items-center justify-between rounded-2xl border border-border bg-card px-4 py-3.5 text-sm font-medium transition hover:bg-muted"
+          >
+            <span>Admin panel</span>
+          </a>
+          <a
+            href="/settings"
+            className="flex w-full items-center justify-center gap-2 rounded-2xl border border-border bg-card py-3.5 text-sm font-medium transition hover:bg-muted"
+          >
+            Branding & Settings (Admin)
+          </a>
+        </>
+      )}
+
+      <a
+        href="/about"
         className="flex w-full items-center justify-center gap-2 rounded-2xl border border-border bg-card py-3.5 text-sm font-medium transition hover:bg-muted"
       >
         About GEEZ
-      </a>
-      <a
-        href="/settings"
-        className="flex w-full items-center justify-center gap-2 rounded-2xl border border-border bg-card py-3.5 text-sm font-medium transition hover:bg-muted"
-      >
-        Branding & Settings (Admin)
       </a>
 
       <button
