@@ -39,6 +39,9 @@ export default function SettingsPage() {
   const [apkUrl, setApkUrl] = useState("");
   const [forceMsg, setForceMsg] = useState("");
   const [forceEnabled, setForceEnabled] = useState(false);
+  const [loansEnabled, setLoansEnabled] = useState(false);
+  const [loanInterest, setLoanInterest] = useState("25");
+  const [loanDays, setLoanDays] = useState("60");
 
   useEffect(() => {
     async function load() {
@@ -82,6 +85,9 @@ export default function SettingsPage() {
         setApkUrl((settings as any).apk_download_url || "");
         setForceMsg((settings as any).force_update_message || "");
         setForceEnabled(!!(settings as any).force_update_enabled);
+        setLoansEnabled(!!(settings as any).loans_enabled);
+        setLoanInterest(String((settings as any).loan_interest_percent ?? 25));
+        setLoanDays(String((settings as any).loan_duration_days ?? 60));
       }
       setLoading(false);
     }
@@ -430,7 +436,72 @@ export default function SettingsPage() {
       </section>
 
       
-      {/* Force update */}
+      
+      {/* Loans module */}
+      <section className="space-y-3">
+        <h2 className="text-base font-semibold">Loans module</h2>
+        <div className="space-y-3 rounded-2xl border border-border bg-card p-5">
+          <label className="flex items-center justify-between gap-3 text-sm">
+            <span className="font-medium">Enable loans (global)</span>
+            <input
+              type="checkbox"
+              checked={loansEnabled}
+              onChange={(e) => setLoansEnabled(e.target.checked)}
+              className="h-5 w-5 accent-primary"
+            />
+          </label>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="mb-1 block text-xs text-muted-foreground">Interest %</label>
+              <input
+                type="number"
+                value={loanInterest}
+                onChange={(e) => setLoanInterest(e.target.value)}
+                className="w-full rounded-xl border border-input bg-background px-3 py-2 text-sm"
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs text-muted-foreground">Duration (days)</label>
+              <input
+                type="number"
+                value={loanDays}
+                onChange={(e) => setLoanDays(e.target.value)}
+                className="w-full rounded-xl border border-input bg-background px-3 py-2 text-sm"
+              />
+            </div>
+          </div>
+          <button
+            type="button"
+            disabled={saving}
+            onClick={async () => {
+              setSaving(true);
+              setError(null);
+              try {
+                const supabase = createClient();
+                const { error } = await supabase
+                  .from("app_settings")
+                  .update({
+                    loans_enabled: loansEnabled,
+                    loan_interest_percent: Number(loanInterest),
+                    loan_duration_days: Number(loanDays),
+                  })
+                  .eq("id", "main");
+                if (error) throw error;
+                setMessage("Loan settings saved");
+              } catch (err) {
+                setError(err instanceof Error ? err.message : "Failed");
+              } finally {
+                setSaving(false);
+              }
+            }}
+            className="w-full rounded-2xl bg-primary py-3 text-sm font-semibold text-primary-foreground"
+          >
+            Save loan settings
+          </button>
+        </div>
+      </section>
+
+{/* Force update */}
       <section className="space-y-3">
         <h2 className="flex items-center gap-2 text-base font-semibold">
           Force update (APK)

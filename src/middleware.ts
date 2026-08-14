@@ -72,7 +72,8 @@ export async function middleware(request: NextRequest) {
       path.startsWith("/about") ||
       path.startsWith("/chat") ||
       path.startsWith("/admin") ||
-      path.startsWith("/dual");
+      path.startsWith("/dual") ||
+      path.startsWith("/loans");
 
     const isAuthRoute =
       path.startsWith("/login") ||
@@ -113,6 +114,8 @@ export const config = {
     "/chat",
     "/admin/:path*",
     "/dual/:path*",
+    "/loans",
+    "/loans/:path*",
     "/login",
     "/register",
     "/forgot-password",

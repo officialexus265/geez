@@ -307,7 +307,13 @@ export default function ProfilePage() {
         </button>
       )}
 <a
-        href="/dual/setup"
+        href="/loans"
+          className="flex w-full items-center justify-between rounded-2xl border border-border bg-card px-4 py-3.5 text-sm font-medium transition hover:bg-muted"
+        >
+          <span>Loans</span>
+        </a>
+        <a
+          href="/dual/setup"
           className="flex w-full items-center justify-between rounded-2xl border border-border bg-card px-4 py-3.5 text-sm font-medium transition hover:bg-muted"
         >
           <span>Dual savings setup</span>

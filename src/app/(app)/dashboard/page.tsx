@@ -20,6 +20,9 @@ interface Summary {
   total: number;
   yours: number;
   partner: number;
+  general: number;
+  goalsTotal: number;
+  fixedTotal: number;
 }
 
 interface RecentTx {
@@ -41,7 +44,7 @@ interface GoalPreview {
 
 export default function DashboardPage() {
   const { hidden } = useHideBalance();
-  const [summary, setSummary] = useState<Summary>({ total: 0, yours: 0, partner: 0 });
+  const [summary, setSummary] = useState<Summary>({ total: 0, yours: 0, partner: 0, general: 0, goalsTotal: 0, fixedTotal: 0 });
   const [recent, setRecent] = useState<RecentTx[]>([]);
   const [goals, setGoals] = useState<GoalPreview[]>([]);
   const [loading, setLoading] = useState(true);
@@ -60,13 +63,47 @@ export default function DashboardPage() {
         .eq("status", "success")
         .order("created_at", { ascending: false });
 
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("general_balance, dual_pair_id, account_type")
+        .eq("id", userId)
+        .single();
+
+      const { data: allGoals } = await supabase
+        .from("goals")
+        .select("current_amount, goal_type")
+        .or(`created_by.eq.${userId},owner_id.eq.${userId}`);
+
+      const goalsTotal = (allGoals || []).reduce(
+        (s, g) => s + Number(g.current_amount || 0),
+        0
+      );
+      const fixedTotal = (allGoals || [])
+        .filter((g) => (g as any).goal_type === "fixed")
+        .reduce((s, g) => s + Number(g.current_amount || 0), 0);
+      const general = Number(profile?.general_balance || 0);
+
       if (txs) {
         const total = txs.reduce((s, t) => s + Number(t.amount), 0);
         const yours = txs
           .filter((t) => t.depositor_id === userId)
           .reduce((s, t) => s + Number(t.amount), 0);
-        setSummary({ total, yours, partner: total - yours });
+        setSummary({
+          total,
+          yours,
+          partner: total - yours,
+          general,
+          goalsTotal,
+          fixedTotal,
+        });
         setRecent(txs.slice(0, 5));
+      } else {
+        setSummary((prev) => ({
+          ...prev,
+          general,
+          goalsTotal,
+          fixedTotal,
+        }));
       }
     }
 
@@ -196,7 +233,7 @@ export default function DashboardPage() {
         </div>
       </motion.section>
 
-      {/* Contribution split */}
+      {/* Balances breakdown */}
       <motion.section
         initial={{ opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}
@@ -204,12 +241,28 @@ export default function DashboardPage() {
         className="grid grid-cols-2 gap-3"
       >
         <div className="rounded-2xl border border-border bg-card p-4">
-          <p className="text-xs text-muted-foreground">You</p>
-          <p className="mt-1 text-xl font-bold">{hidden ? "••••" : formatMWK(summary.yours)}</p>
+          <p className="text-xs text-muted-foreground">General savings</p>
+          <p className="mt-1 text-xl font-bold">
+            {hidden ? "••••" : formatMWK(summary.general)}
+          </p>
         </div>
         <div className="rounded-2xl border border-border bg-card p-4">
-          <p className="text-xs text-muted-foreground">Partner</p>
-          <p className="mt-1 text-xl font-bold">{hidden ? "••••" : formatMWK(summary.partner)}</p>
+          <p className="text-xs text-muted-foreground">In goals</p>
+          <p className="mt-1 text-xl font-bold">
+            {hidden ? "••••" : formatMWK(summary.goalsTotal)}
+          </p>
+        </div>
+        <div className="rounded-2xl border border-border bg-card p-4">
+          <p className="text-xs text-muted-foreground">Fixed goals (loanable)</p>
+          <p className="mt-1 text-xl font-bold">
+            {hidden ? "••••" : formatMWK(summary.fixedTotal)}
+          </p>
+        </div>
+        <div className="rounded-2xl border border-border bg-card p-4">
+          <p className="text-xs text-muted-foreground">Your deposits</p>
+          <p className="mt-1 text-xl font-bold">
+            {hidden ? "••••" : formatMWK(summary.yours)}
+          </p>
         </div>
       </motion.section>
 
