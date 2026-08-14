@@ -470,8 +470,44 @@ export default function SettingsPage() {
               value={apkUrl}
               onChange={(e) => setApkUrl(e.target.value)}
               className="w-full rounded-xl border border-input bg-background px-3 py-2.5 text-sm"
-              placeholder="https://..."
+              placeholder="https://... or upload file below"
             />
+            <label className="mt-2 inline-flex cursor-pointer items-center gap-2 rounded-full border border-border px-4 py-2 text-xs font-medium hover:bg-muted">
+              {saving ? "Uploading…" : "Upload APK file"}
+              <input
+                type="file"
+                accept=".apk,application/vnd.android.package-archive"
+                className="hidden"
+                disabled={saving}
+                onChange={async (e) => {
+                  const file = e.target.files?.[0];
+                  if (!file) return;
+                  setSaving(true);
+                  setError(null);
+                  try {
+                    const supabase = createClient();
+                    const pathName = `apk/geez-${Date.now()}.apk`;
+                    const { error: upErr } = await supabase.storage
+                      .from("branding")
+                      .upload(pathName, file, { upsert: true, contentType: "application/vnd.android.package-archive" });
+                    if (upErr) throw upErr;
+                    const { data: pub } = supabase.storage.from("branding").getPublicUrl(pathName);
+                    const url = pub.publicUrl;
+                    setApkUrl(url);
+                    await supabase.from("app_settings").update({ apk_download_url: url }).eq("id", "main");
+                    setMessage("APK uploaded and saved");
+                  } catch (err) {
+                    setError(err instanceof Error ? err.message : "APK upload failed");
+                  } finally {
+                    setSaving(false);
+                    e.target.value = "";
+                  }
+                }}
+              />
+            </label>
+            <p className="mt-1 text-[11px] text-muted-foreground">
+              Uploaded APK is used for Share app, landing download, and force-update.
+            </p>
           </div>
           <div>
             <label className="mb-1.5 block text-xs font-medium text-muted-foreground">

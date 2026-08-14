@@ -1,13 +1,95 @@
 "use client";
 
+import { Suspense, useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import Link from "next/link";
-import { Heart, ArrowRight, Shield, Sparkles } from "lucide-react";
+import { useSearchParams } from "next/navigation";
+import {
+  Heart,
+  ArrowRight,
+  Shield,
+  Sparkles,
+  Share2,
+  Download,
+  Loader2,
+} from "lucide-react";
+import { createClient } from "@/lib/supabase/client";
 
-export default function LandingPage() {
+function LandingContent() {
+  const searchParams = useSearchParams();
+  const autoDownload = searchParams.get("download") === "1";
+  const [apkUrl, setApkUrl] = useState<string | null>(null);
+  const [downloading, setDownloading] = useState(false);
+  const [shareHint, setShareHint] = useState<string | null>(null);
+
+  useEffect(() => {
+    async function load() {
+      try {
+        const supabase = createClient();
+        const { data } = await supabase
+          .from("app_settings")
+          .select("apk_download_url, og_image_url, brand_name")
+          .eq("id", "main")
+          .maybeSingle();
+        if (data?.apk_download_url) setApkUrl(data.apk_download_url);
+      } catch {
+        // ignore
+      }
+    }
+    load();
+  }, []);
+
+  useEffect(() => {
+    if (!autoDownload || !apkUrl) return;
+    setDownloading(true);
+    const t = setTimeout(() => {
+      window.location.href = apkUrl;
+      setDownloading(false);
+    }, 600);
+    return () => clearTimeout(t);
+  }, [autoDownload, apkUrl]);
+
+  async function handleShare() {
+    const origin =
+      typeof window !== "undefined" ? window.location.origin : "https://geez-lac.vercel.app";
+    const shareUrl = `${origin}/?download=1`;
+    const shareData = {
+      title: "GEEZ — Savings",
+      text: "Save smarter with GEEZ. Open the link to get the app.",
+      url: shareUrl,
+    };
+
+    try {
+      if (navigator.share) {
+        await navigator.share(shareData);
+        setShareHint("Shared");
+      } else {
+        await navigator.clipboard.writeText(shareUrl);
+        setShareHint("Link copied — paste it in WhatsApp or anywhere");
+      }
+    } catch {
+      try {
+        await navigator.clipboard.writeText(shareUrl);
+        setShareHint("Link copied");
+      } catch {
+        setShareHint(shareUrl);
+      }
+    }
+    setTimeout(() => setShareHint(null), 4000);
+  }
+
+  function handleDownload() {
+    if (!apkUrl) {
+      setShareHint("APK not uploaded yet — ask admin to upload in Settings");
+      return;
+    }
+    setDownloading(true);
+    window.location.href = apkUrl;
+    setTimeout(() => setDownloading(false), 2000);
+  }
+
   return (
     <div className="min-h-screen flex flex-col bg-background text-foreground overflow-hidden">
-      {/* Subtle background glow */}
       <div className="pointer-events-none fixed inset-0 overflow-hidden">
         <div className="absolute -top-40 -right-40 h-96 w-96 rounded-full bg-primary/10 blur-3xl" />
         <div className="absolute -bottom-40 -left-40 h-96 w-96 rounded-full bg-love/10 blur-3xl" />
@@ -45,17 +127,30 @@ export default function LandingPage() {
           </motion.div>
 
           <h1 className="mb-4 text-4xl font-bold tracking-tight sm:text-5xl">
-            Our shared{" "}
+            Your{" "}
             <span className="text-primary">savings</span>
             <br />
-            vault
+            platform
           </h1>
 
           <p className="mb-10 text-lg text-muted-foreground">
-            Deposit together. Grow together.
+            Personal or dual accounts. Goals, secure deposits, and more.
             <br />
-            Powered by PayChangu — built with love.
+            Powered by PayChangu.
           </p>
+
+          {autoDownload && (
+            <div className="mb-6 rounded-2xl border border-primary/30 bg-primary/10 px-4 py-3 text-sm">
+              {downloading || apkUrl ? (
+                <span className="inline-flex items-center gap-2">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Starting app download…
+                </span>
+              ) : (
+                "Preparing download… If it doesn’t start, use Download app below."
+              )}
+            </div>
+          )}
 
           <div className="flex flex-col gap-3 sm:flex-row sm:justify-center">
             <Link
@@ -65,41 +160,69 @@ export default function LandingPage() {
               Enter GEEZ
               <ArrowRight className="h-4 w-4 transition group-hover:translate-x-0.5" />
             </Link>
-            <Link
-              href="/deposit"
+            <button
+              type="button"
+              onClick={handleShare}
               className="inline-flex items-center justify-center gap-2 rounded-2xl border border-border bg-card px-8 py-3.5 text-base font-medium transition hover:bg-muted"
             >
-              Public Deposit
-            </Link>
+              <Share2 className="h-4 w-4" />
+              Share app
+            </button>
           </div>
+
+          <button
+            type="button"
+            onClick={handleDownload}
+            className="mt-4 inline-flex items-center gap-2 text-sm font-medium text-primary hover:underline"
+          >
+            <Download className="h-4 w-4" />
+            Download Android app
+          </button>
+
+          {shareHint && (
+            <p className="mt-3 text-xs text-muted-foreground">{shareHint}</p>
+          )}
         </motion.div>
 
-        {/* Feature pills */}
         <motion.div
           initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.45, duration: 0.6 }}
+          transition={{ delay: 0.35 }}
           className="mt-16 flex flex-wrap justify-center gap-3"
         >
           {[
-            { icon: Shield, label: "Secure dual-approval" },
-            { icon: Sparkles, label: "Beautiful receipts" },
-            { icon: Heart, label: "Built for two" },
-          ].map((item) => (
+            { icon: Shield, label: "Secure deposits" },
+            { icon: Sparkles, label: "Personal & dual" },
+            { icon: Heart, label: "Goals that stick" },
+          ].map(({ icon: Icon, label }) => (
             <div
-              key={item.label}
+              key={label}
               className="flex items-center gap-2 rounded-full border border-border bg-card/80 px-4 py-2 text-sm text-muted-foreground backdrop-blur"
             >
-              <item.icon className="h-4 w-4 text-primary" />
-              {item.label}
+              <Icon className="h-4 w-4 text-primary" />
+              {label}
             </div>
           ))}
         </motion.div>
       </main>
 
-      <footer className="relative z-10 py-6 text-center text-sm text-muted-foreground">
-        Made with <Heart className="inline h-3.5 w-3.5 fill-love text-love" /> for us
+      <footer className="relative z-10 py-6 text-center text-xs text-muted-foreground">
+        GEEZ · Save with purpose
       </footer>
     </div>
+  );
+}
+
+export default function LandingPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex min-h-screen items-center justify-center">
+          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        </div>
+      }
+    >
+      <LandingContent />
+    </Suspense>
   );
 }
