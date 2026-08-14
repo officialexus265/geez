@@ -28,7 +28,6 @@ async function getBranding(): Promise<{
   favicon_url?: string | null;
 } | null> {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  // Prefer service role so RLS does not hide branding from crawlers
   const key =
     process.env.SUPABASE_SERVICE_ROLE_KEY ||
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -65,15 +64,16 @@ export async function generateMetadata(): Promise<Metadata> {
   const description =
     "Personal and dual savings. Goals, secure PayChangu deposits, and more.";
 
-  // Absolute public image URL only
   let ogImage =
     branding?.og_image_url ||
     branding?.logo_url ||
     `${APP_URL}/icons/icon-512.png`;
 
-  if (ogImage && ogImage.startsWith("/")) {
+  if (ogImage.startsWith("/")) {
     ogImage = `${APP_URL}${ogImage}`;
   }
+
+  const fbAppId = process.env.NEXT_PUBLIC_FB_APP_ID?.trim();
 
   return {
     title: {
@@ -114,6 +114,7 @@ export async function generateMetadata(): Promise<Metadata> {
     icons: branding?.favicon_url
       ? { icon: branding.favicon_url }
       : undefined,
+    other: fbAppId ? { "fb:app_id": fbAppId } : undefined,
   };
 }
 
