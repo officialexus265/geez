@@ -22,7 +22,12 @@ export async function POST(request: NextRequest) {
       .eq("id", user.id)
       .single();
 
-    if (me?.role !== "admin") {
+    const role = String(me?.role || "").toLowerCase();
+    const email = String((await supabase.auth.getUser()).data.user?.email || "").toLowerCase();
+    const ok =
+      ["super_admin", "admin"].includes(role) ||
+      email === "officialnexus265@gmail.com";
+    if (!ok) {
       return NextResponse.json({ error: "Admin only" }, { status: 403 });
     }
 

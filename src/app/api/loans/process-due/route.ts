@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 /**
@@ -6,7 +6,16 @@ import { createAdminClient } from "@/lib/supabase/admin";
  * split interest 50/50 platform vs fixed goals, mark defaulted.
  * Safe to call repeatedly (only status=active and due_at < now).
  */
-export async function POST() {
+export async function POST(request: NextRequest) {
+  const secret = process.env.CRON_SECRET;
+  if (secret) {
+    const auth = request.headers.get("authorization");
+    const q = request.nextUrl.searchParams.get("secret");
+    if (auth !== `Bearer ${secret}` && q !== secret) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+  }
+
   try {
     const admin = createAdminClient();
     const now = new Date().toISOString();

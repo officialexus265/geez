@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import {
+  initiateMobileMoneyPayout,
+  MOBILE_MONEY_OPERATORS,
+} from "@/lib/paychangu";
+import { randomUUID } from "crypto";
 
-/**
- * GET — list my loans + eligibility snapshot
- * POST — request loan (automated approval if eligible)
- */
 export async function GET() {
   try {
     const supabase = await createClient();
@@ -44,7 +45,9 @@ export async function GET() {
       .eq("user_id", user.id)
       .order("created_at", { ascending: false });
 
-    const open = (loans || []).filter((l) => l.status === "active");
+    const open = (loans || []).filter((l) =>
+      ["active", "pending_disbursement"].includes(l.status)
+    );
     const openObligation = open.reduce(
       (s, l) => s + (Number(l.total_repayable) - Number(l.amount_repaid || 0)),
       0
@@ -143,7 +146,7 @@ export async function POST(request: NextRequest) {
       .from("loans")
       .select("total_repayable, amount_repaid, status")
       .eq("user_id", user.id)
-      .eq("status", "active");
+      .in("status", ["active", "pending_disbursement"]);
 
     const openObligation = (openLoans || []).reduce(
       (s, l) => s + (Number(l.total_repayable) - Number(l.amount_repaid || 0)),
@@ -153,7 +156,7 @@ export async function POST(request: NextRequest) {
     if (openObligation + totalRepayable > fixedTotal + 0.001) {
       return NextResponse.json(
         {
-          error: `Loan plus interest would exceed your fixed savings. Max available ~ MWK ${Math.max(0, fixedTotal - openObligation).toFixed(0)}`,
+          error: `Loan plus interest would exceed your fixed savings. Max ~ MWK ${Math.max(0, fixedTotal - openObligation).toFixed(0)}`,
         },
         { status: 400 }
       );
@@ -162,6 +165,13 @@ export async function POST(request: NextRequest) {
     const due = new Date();
     due.setDate(due.getDate() + durationDays);
 
+    const { data: profile } = await admin
+      .from("profiles")
+      .select("email, full_name")
+      .eq("id", user.id)
+      .single();
+
+    // Insert as pending_disbursement until payout succeeds
     const { data: loan, error } = await admin
       .from("loans")
       .insert({
@@ -171,8 +181,7 @@ export async function POST(request: NextRequest) {
         interest_amount: interestAmount,
         total_repayable: totalRepayable,
         amount_repaid: 0,
-        status: "active",
-        disbursed_at: new Date().toISOString(),
+        status: "pending_disbursement",
         due_at: due.toISOString(),
       })
       .select()
@@ -182,25 +191,60 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
-    // Record intended payout details on notifications for admin visibility
-    await admin.from("notifications").insert({
-      user_id: user.id,
-      title: "Loan disbursed",
-      body: `MWK ${principal} loan approved. Repay MWK ${totalRepayable} by ${due.toLocaleDateString()}. Payout to ${destination_type} ${phone}.`,
-      type: "system",
-      metadata: {
-        loan_id: loan.id,
-        phone,
-        destination_type,
-        principal,
-        total_repayable: totalRepayable,
-      },
-    });
+    try {
+      const operatorRef =
+        destination_type === "airtel_money"
+          ? MOBILE_MONEY_OPERATORS.airtel_money
+          : MOBILE_MONEY_OPERATORS.tnm_mpamba;
 
-    return NextResponse.json({
-      loan,
-      message: "Loan approved automatically",
-    });
+      await initiateMobileMoneyPayout({
+        amount: principal,
+        mobile: phone,
+        mobile_money_operator_ref_id: operatorRef,
+        charge_id: randomUUID(),
+        email: profile?.email || undefined,
+        first_name: profile?.full_name?.split(" ")[0],
+        last_name:
+          profile?.full_name?.split(" ").slice(1).join(" ") || undefined,
+      });
+
+      await admin
+        .from("loans")
+        .update({
+          status: "active",
+          disbursed_at: new Date().toISOString(),
+        })
+        .eq("id", loan.id);
+
+      await admin.from("notifications").insert({
+        user_id: user.id,
+        title: "Loan disbursed",
+        body: `MWK ${principal} sent to ${phone}. Repay MWK ${totalRepayable} by ${due.toLocaleDateString()}.`,
+        type: "system",
+        metadata: { loan_id: loan.id, phone, principal },
+      });
+
+      return NextResponse.json({
+        loan: { ...loan, status: "active" },
+        message: "Loan approved and payout initiated to your phone",
+      });
+    } catch (payoutErr) {
+      console.error("Loan payout failed", payoutErr);
+      await admin
+        .from("loans")
+        .update({ status: "failed_disbursement" })
+        .eq("id", loan.id);
+
+      return NextResponse.json(
+        {
+          error:
+            payoutErr instanceof Error
+              ? `Payout failed: ${payoutErr.message}. Loan was not activated.`
+              : "Payout failed — loan not activated",
+        },
+        { status: 502 }
+      );
+    }
   } catch (err) {
     console.error(err);
     return NextResponse.json(

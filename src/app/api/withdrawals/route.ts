@@ -169,9 +169,13 @@ export async function POST(request: NextRequest) {
     // Send code to the user (email + SMS if phone)
     const msg = `GEEZ withdraw code: ${code}. Amount MWK ${amount}, fee ${feePercent}% (MWK ${feeAmount}), you receive MWK ${netAmount}.`;
 
+    let emailSent = false;
+    let smsSent = false;
+    let emailError: string | undefined;
+
     if (me.email) {
       try {
-        await sendEmail({
+        const emailResult = await sendEmail({
           to: me.email,
           subject: "GEEZ — Withdrawal confirmation code",
           html: `<p>Hi ${me.full_name || ""},</p>
@@ -180,20 +184,36 @@ export async function POST(request: NextRequest) {
             <strong>You receive: MWK ${netAmount}</strong></p>
             <p>Destination: ${destination_type} ${phone_number}</p>`,
         });
+        emailSent = !!emailResult.success;
+        emailError = emailResult.error;
       } catch (e) {
         console.error("Email failed", e);
+        emailError = e instanceof Error ? e.message : "Email failed";
       }
     }
 
     if (me.phone || phone_number) {
       try {
-        await sendSMS({
+        const smsResult = await sendSMS({
           to: me.phone || phone_number,
           content: msg,
         });
+        smsSent = !!smsResult.success;
       } catch (e) {
         console.error("SMS failed", e);
       }
+    }
+
+    if (!emailSent && !smsSent) {
+      return NextResponse.json(
+        {
+          error:
+            emailError ||
+            "Could not send confirmation code. Check SMTP settings (SMTP_HOST, SMTP_USER, SMTP_PASS) on Vercel.",
+          id: withdrawal.id,
+        },
+        { status: 502 }
+      );
     }
 
     return NextResponse.json({
@@ -202,7 +222,11 @@ export async function POST(request: NextRequest) {
       fee_amount: feeAmount,
       net_amount: netAmount,
       is_early_exit: isEarlyExit,
-      message: "Confirmation code sent to your email",
+      email_sent: emailSent,
+      sms_sent: smsSent,
+      message: emailSent
+        ? "Confirmation code sent to your email"
+        : "Confirmation code sent by SMS (email failed)",
     });
   } catch (err) {
     console.error("Withdraw start error:", err);

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { verifyPayment } from "@/lib/paychangu";
 import { maybeCreditReferral } from "@/lib/referrals";
+import { applyLoanRepayment } from "@/lib/loans-repay";
 
 const ALLOWED_METHODS = new Set([
   "airtel_money",
@@ -148,6 +149,24 @@ export async function POST(request: NextRequest) {
         );
       } catch (refErr) {
         console.error("Referral credit error", refErr);
+      }
+
+      // Loan repayment?
+      try {
+        const meta = (updated as any).paychangu_data?.meta
+          || (verification as any)?.data?.meta
+          || {};
+        const loanId = meta.loan_id || meta?.type === "loan_repay" && meta.loan_id;
+        // Also detect from tx_ref prefix
+        if ((meta.type === "loan_repay" && meta.loan_id) || String(tx_ref).startsWith("GEEZ-LOAN-")) {
+          const lid = meta.loan_id;
+          const uid = (updated as any).depositor_id || meta.depositor_id;
+          if (lid && uid) {
+            await applyLoanRepayment(supabase, lid, amt, uid);
+          }
+        }
+      } catch (loanErr) {
+        console.error("Loan repay apply error", loanErr);
       }
 
       return NextResponse.json({

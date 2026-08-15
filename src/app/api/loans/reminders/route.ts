@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { sendEmail, sendSMS } from "@/lib/notifications";
 
@@ -15,7 +15,16 @@ const WINDOWS = [
  * Tracks sent windows in loan meta via notifications metadata or loans row.
  * Uses notifications type to avoid duplicate sends same day.
  */
-export async function POST() {
+export async function POST(request: NextRequest) {
+  const secret = process.env.CRON_SECRET;
+  if (secret) {
+    const auth = request.headers.get("authorization");
+    const q = request.nextUrl.searchParams.get("secret");
+    if (auth !== `Bearer ${secret}` && q !== secret) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+  }
+
   try {
     const admin = createAdminClient();
     const { data: active } = await admin

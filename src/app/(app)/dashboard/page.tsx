@@ -108,9 +108,11 @@ export default function DashboardPage() {
     }
 
     async function refreshGoals() {
+      if (!userId) return;
       const { data: goalsData } = await supabase
         .from("goals")
         .select("id, title, target_amount, current_amount, emoji")
+        .or(`created_by.eq.${userId},owner_id.eq.${userId}`)
         .eq("is_completed", false)
         .order("created_at", { ascending: false })
         .limit(3);

@@ -170,6 +170,9 @@ export default function AdminHomePage() {
       </div>
 
       <div className="flex flex-wrap gap-3 text-sm">
+        <Link href="/admin/analytics" className="text-primary hover:underline">
+          Analytics
+        </Link>
         <Link href="/settings" className="text-primary hover:underline">
           Settings & branding
         </Link>

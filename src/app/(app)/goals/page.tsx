@@ -97,6 +97,28 @@ export default function GoalsPage() {
       } = await supabase.auth.getUser();
       if (!user) throw new Error("Not signed in");
 
+      // Cannot switch fixed → normal while loan is active
+      if (
+        editing &&
+        editing.goal_type === "fixed" &&
+        goalType === "normal"
+      ) {
+        const { data: activeLoans } = await supabase
+          .from("loans")
+          .select("id")
+          .eq("user_id", user.id)
+          .in("status", ["active", "pending_disbursement"])
+          .limit(1);
+        if (activeLoans && activeLoans.length) {
+          throw new Error(
+            "Cannot change a fixed goal to normal while you have an active loan. Repay the loan first, or cancel the goal (6% early-exit fee on the goal balance)."
+          );
+        }
+        throw new Error(
+          "Fixed goals cannot be switched to normal. Cancel the goal instead (6% processing fee on the goal balance)."
+        );
+      }
+
       const payload: Record<string, unknown> = {
         title: title.trim(),
         target_amount: Number(target),
@@ -129,10 +151,61 @@ export default function GoalsPage() {
   }
 
   async function handleDelete(id: string) {
-    if (!confirm("Delete this goal? Money stays in your balance — only the goal label is removed.")) {
+    const goal = goals.find((g) => g.id === id);
+    const supabase = createClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) return;
+
+    if (goal?.goal_type === "fixed" && Number(goal.current_amount) > 0) {
+      const { data: activeLoans } = await supabase
+        .from("loans")
+        .select("id")
+        .eq("user_id", user.id)
+        .in("status", ["active", "pending_disbursement"])
+        .limit(1);
+      if (activeLoans && activeLoans.length) {
+        alert("Cannot cancel a fixed goal while you have an active loan.");
+        return;
+      }
+      const bal = Number(goal.current_amount);
+      const fee = Math.round(bal * 0.06 * 100) / 100;
+      const net = Math.round((bal - fee) * 100) / 100;
+      if (
+        !confirm(
+          `Cancel fixed goal? 6% early-exit fee applies.\nBalance ${bal} → fee ${fee} → ${net} moves to general savings.`
+        )
+      ) {
+        return;
+      }
+      // Fee + move net to general
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("general_balance")
+        .eq("id", user.id)
+        .single();
+      await supabase.from("fee_ledger").insert({
+        user_id: user.id,
+        goal_id: id,
+        fee_type: "early_exit_6",
+        amount: fee,
+        meta: { reason: "cancel_fixed_goal" },
+      });
+      await supabase
+        .from("profiles")
+        .update({
+          general_balance: Number(profile?.general_balance || 0) + net,
+        })
+        .eq("id", user.id);
+      await supabase.from("goals").delete().eq("id", id);
+      await loadGoals();
       return;
     }
-    const supabase = createClient();
+
+    if (!confirm("Delete this goal? Money stays in your balances — only the goal label is removed.")) {
+      return;
+    }
     await supabase.from("goals").delete().eq("id", id);
     await loadGoals();
   }
