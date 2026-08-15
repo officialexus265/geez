@@ -89,9 +89,17 @@ export async function POST(request: NextRequest) {
     });
 
     const checkout =
-      payment?.data?.checkout_url ||
-      payment?.data?.data?.checkout_url ||
-      payment?.checkout_url;
+      (payment as { data?: { checkout_url?: string }; checkout_url?: string })?.data
+        ?.checkout_url ||
+      (payment as { checkout_url?: string })?.checkout_url ||
+      null;
+
+    if (!checkout) {
+      return NextResponse.json(
+        { error: "PayChangu did not return a checkout URL" },
+        { status: 502 }
+      );
+    }
 
     return NextResponse.json({
       checkout_url: checkout,
