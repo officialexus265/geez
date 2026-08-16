@@ -131,34 +131,41 @@ export default function DashboardPage() {
     async function refreshGoals() {
       if (!userId) return;
 
-      // Prefer created_by (always present). owner_id may be missing on older DBs.
-      let goalsData: GoalPreview[] | null = null;
-
-      const q1 = await supabase
+      const { data: goalsData, error } = await supabase
         .from("goals")
-        .select("id, title, target_amount, current_amount, emoji, is_completed, created_by, owner_id")
-        .eq("created_by", userId)
+        .select(
+          "id, title, target_amount, current_amount, emoji, is_completed, created_by, owner_id"
+        )
+        .or(`created_by.eq.${userId},owner_id.eq.${userId}`)
         .order("created_at", { ascending: false })
-        .limit(10);
+        .limit(20);
 
-      if (!q1.error && q1.data) {
-        goalsData = q1.data as GoalPreview[];
-      } else {
-        // Fallback: or-filter including owner_id
-        const q2 = await supabase
+      if (error) {
+        console.error("Goals load error", error);
+        // Last resort: any goals you created
+        const { data: fallback } = await supabase
           .from("goals")
           .select("id, title, target_amount, current_amount, emoji, is_completed")
-          .or(`created_by.eq.${userId},owner_id.eq.${userId}`)
+          .eq("created_by", userId)
           .order("created_at", { ascending: false })
-          .limit(10);
-        if (!q2.error && q2.data) goalsData = q2.data as GoalPreview[];
-        else console.error("Goals load error", q1.error || q2.error);
+          .limit(20);
+        const open = (fallback || []).filter((g: any) => g.is_completed !== true);
+        setGoals(open.slice(0, 5));
+        return;
       }
 
       const open = (goalsData || []).filter(
-        (g) => (g as { is_completed?: boolean }).is_completed !== true
+        (g: any) => g.is_completed !== true
       );
-      setGoals(open.slice(0, 3));
+      setGoals(
+        open.slice(0, 5).map((g: any) => ({
+          id: g.id,
+          title: g.title,
+          target_amount: Number(g.target_amount),
+          current_amount: Number(g.current_amount),
+          emoji: g.emoji,
+        }))
+      );
     }
 
     async function load() {
