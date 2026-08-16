@@ -32,6 +32,8 @@ export default function GoalsPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const { hidden } = useHideBalance();
+  const [tab, setTab] = useState<"active" | "completed">("active");
+  const [search, setSearch] = useState("");
 
   async function loadGoals() {
     try {
@@ -39,11 +41,21 @@ export default function GoalsPage() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
-      const { data, error } = await supabase
+      let { data, error } = await supabase
         .from("goals")
         .select("*")
-        .or(`created_by.eq.${user.id},owner_id.eq.${user.id}`)
+        .eq("created_by", user.id)
         .order("created_at", { ascending: false });
+
+      if (error) {
+        const q2 = await supabase
+          .from("goals")
+          .select("*")
+          .or(`created_by.eq.${user.id},owner_id.eq.${user.id}`)
+          .order("created_at", { ascending: false });
+        data = q2.data;
+        error = q2.error;
+      }
       if (error) throw error;
       setGoals((data as Goal[]) || []);
     } catch (err) {
@@ -210,6 +222,16 @@ export default function GoalsPage() {
     await loadGoals();
   }
 
+  const q = search.trim().toLowerCase();
+  const activeGoals = goals.filter((g) => !g.is_completed);
+  const completedGoals = goals.filter((g) => g.is_completed);
+  const visible = (tab === "active" ? activeGoals : completedGoals).filter(
+    (g) =>
+      !q ||
+      g.title.toLowerCase().includes(q) ||
+      (g.goal_type || "").toLowerCase().includes(q)
+  );
+
   if (loading) {
     return (
       <div className="flex min-h-[40vh] items-center justify-center">
@@ -224,35 +246,69 @@ export default function GoalsPage() {
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Goals</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Normal plans or fixed lock until end date
+            Active plans — completed stay in history tab
           </p>
         </div>
+        {tab === "active" && (
+          <button
+            type="button"
+            onClick={openCreate}
+            className="flex items-center gap-2 rounded-full bg-primary px-4 py-2 text-sm font-medium text-primary-foreground"
+          >
+            <Plus className="h-4 w-4" />
+            New
+          </button>
+        )}
+      </div>
+
+      <div className="flex gap-2 rounded-2xl border border-border bg-card p-1">
         <button
           type="button"
-          onClick={openCreate}
-          className="flex items-center gap-2 rounded-full bg-primary px-4 py-2 text-sm font-medium text-primary-foreground"
+          onClick={() => setTab("active")}
+          className={`flex-1 rounded-xl py-2 text-sm font-medium ${
+            tab === "active" ? "bg-primary text-primary-foreground" : "text-muted-foreground"
+          }`}
         >
-          <Plus className="h-4 w-4" />
-          New
+          Active ({activeGoals.length})
+        </button>
+        <button
+          type="button"
+          onClick={() => setTab("completed")}
+          className={`flex-1 rounded-xl py-2 text-sm font-medium ${
+            tab === "completed" ? "bg-primary text-primary-foreground" : "text-muted-foreground"
+          }`}
+        >
+          Completed ({completedGoals.length})
         </button>
       </div>
 
-      <div className="rounded-2xl border border-border bg-card/50 p-4 text-xs text-muted-foreground">
-        <p>
-          <strong className="text-foreground">Normal</strong> — withdraw anytime (3% fee).{" "}
-          <strong className="text-foreground">Fixed</strong> — locked until end date (3% at
-          maturity) or early exit (6% of amount withdrawn). Loans only use fixed balances.
-        </p>
-      </div>
+      <input
+        value={search}
+        onChange={(e) => setSearch(e.target.value)}
+        placeholder="Search goals…"
+        className="w-full rounded-2xl border border-input bg-background px-4 py-2.5 text-sm"
+      />
 
-      {goals.length === 0 ? (
+      {tab === "active" && (
+        <div className="rounded-2xl border border-border bg-card/50 p-4 text-xs text-muted-foreground">
+          <p>
+            <strong className="text-foreground">Normal</strong> — withdraw anytime (3% fee).{" "}
+            <strong className="text-foreground">Fixed</strong> — locked until end date. When a goal
+            hits its target it moves to <strong>Completed</strong> (kept for history).
+          </p>
+        </div>
+      )}
+
+      {visible.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-border py-16 text-center">
           <Target className="mx-auto h-10 w-10 text-muted-foreground" />
-          <p className="mt-3 text-sm text-muted-foreground">No goals yet</p>
+          <p className="mt-3 text-sm text-muted-foreground">
+            {tab === "active" ? "No active goals" : "No completed goals yet"}
+          </p>
         </div>
       ) : (
         <div className="space-y-3">
-          {goals.map((g) => {
+          {visible.map((g) => {
             const pct = Math.min(
               100,
               (Number(g.current_amount) / Number(g.target_amount)) * 100
@@ -294,17 +350,20 @@ export default function GoalsPage() {
                     </div>
                   </div>
                   <div className="flex gap-1">
-                    <button
-                      type="button"
-                      onClick={() => openEdit(g)}
-                      className="rounded-full p-2 hover:bg-muted"
-                    >
-                      <Pencil className="h-4 w-4" />
-                    </button>
+                    {!g.is_completed && (
+                      <button
+                        type="button"
+                        onClick={() => openEdit(g)}
+                        className="rounded-full p-2 hover:bg-muted"
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </button>
+                    )}
                     <button
                       type="button"
                       onClick={() => handleDelete(g.id)}
                       className="rounded-full p-2 hover:bg-muted text-destructive"
+                      title={g.is_completed ? "Remove from completed list" : "Delete"}
                     >
                       <Trash2 className="h-4 w-4" />
                     </button>

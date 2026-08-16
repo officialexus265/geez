@@ -32,6 +32,8 @@ export default function HistoryPage() {
   const [items, setItems] = useState<TxItem[]>([]);
   const [loading, setLoading] = useState(true);
   const { hidden } = useHideBalance();
+  const [search, setSearch] = useState("");
+
 
   useEffect(() => {
     async function load() {
@@ -144,8 +146,17 @@ export default function HistoryPage() {
     URL.revokeObjectURL(url);
   }
 
-  const filtered =
-    filter === "all" ? items : items.filter((t) => t.type === filter);
+  const q = search.trim().toLowerCase();
+  const filteredItems = items.filter((it) => {
+    if (filter !== "all" && it.type !== filter) return false;
+    if (!q) return true;
+    return (
+      it.name.toLowerCase().includes(q) ||
+      (it.note || "").toLowerCase().includes(q) ||
+      (it.tx_ref || "").toLowerCase().includes(q) ||
+      it.status.toLowerCase().includes(q)
+    );
+  });
 
   if (loading) {
     return (
@@ -161,7 +172,7 @@ export default function HistoryPage() {
         <div>
           <h1 className="text-2xl font-bold tracking-tight">History</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            All deposits and withdrawals
+            Your deposits and withdrawals
           </p>
         </div>
         {items.length > 0 && (
@@ -174,6 +185,13 @@ export default function HistoryPage() {
           </button>
         )}
       </div>
+
+      <input
+        value={search}
+        onChange={(e) => setSearch(e.target.value)}
+        placeholder="Search history…"
+        className="w-full rounded-2xl border border-input bg-background px-4 py-2.5 text-sm"
+      />
 
       <div className="flex gap-2">
         {(["all", "deposit", "withdrawal"] as const).map((f) => (
@@ -191,7 +209,7 @@ export default function HistoryPage() {
         ))}
       </div>
 
-      {filtered.length === 0 ? (
+      {filteredItems.length === 0 ? (
         <motion.div
           initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
@@ -206,7 +224,7 @@ export default function HistoryPage() {
         </motion.div>
       ) : (
         <div className="space-y-2">
-          {filtered.map((tx, i) => (
+          {filteredItems.map((tx, i) => (
             <motion.div
               key={tx.id}
               initial={{ opacity: 0, y: 8 }}

@@ -41,6 +41,7 @@ export default function LoansPage() {
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [repayAmounts, setRepayAmounts] = useState<Record<string, string>>({});
+  const [search, setSearch] = useState("");
 
   async function load() {
     setLoading(true);
@@ -261,7 +262,23 @@ export default function LoansPage() {
         {loans.length === 0 ? (
           <p className="text-sm text-muted-foreground">No loans yet</p>
         ) : (
-          loans.map((l) => {
+          <>
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search loans…"
+            className="mb-2 w-full rounded-xl border border-input bg-background px-3 py-2 text-sm"
+          />
+          {loans
+            .filter((l) => {
+              const q = search.trim().toLowerCase();
+              if (!q) return true;
+              return (
+                l.status.toLowerCase().includes(q) ||
+                String(l.principal).includes(q)
+              );
+            })
+            .map((l) => {
             const remaining =
               Number(l.total_repayable) - Number(l.amount_repaid || 0);
             return (
@@ -314,6 +331,8 @@ export default function LoansPage() {
               </motion.div>
             );
           })
+          }
+          </>
         )}
       </div>
     </div>

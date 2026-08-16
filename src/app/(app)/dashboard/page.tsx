@@ -40,6 +40,7 @@ interface GoalPreview {
   target_amount: number;
   current_amount: number;
   emoji: string | null;
+  is_completed?: boolean;
 }
 
 export default function DashboardPage() {
@@ -154,18 +155,17 @@ export default function DashboardPage() {
         return;
       }
 
-      const open = (goalsData || []).filter(
-        (g: any) => g.is_completed !== true
-      );
-      setGoals(
-        open.slice(0, 5).map((g: any) => ({
-          id: g.id,
-          title: g.title,
-          target_amount: Number(g.target_amount),
-          current_amount: Number(g.current_amount),
-          emoji: g.emoji,
-        }))
-      );
+      const rows = (goalsData || []).map((g: any) => ({
+        id: g.id,
+        title: g.title,
+        target_amount: Number(g.target_amount),
+        current_amount: Number(g.current_amount),
+        emoji: g.emoji,
+        is_completed: g.is_completed === true,
+      }));
+
+      // Home: active goals only (completed live under Goals → Completed)
+      setGoals(rows.filter((g) => !g.is_completed).slice(0, 5));
     }
 
     async function load() {
