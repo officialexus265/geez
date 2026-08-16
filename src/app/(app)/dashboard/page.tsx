@@ -130,14 +130,35 @@ export default function DashboardPage() {
 
     async function refreshGoals() {
       if (!userId) return;
-      const { data: goalsData } = await supabase
+
+      // Prefer created_by (always present). owner_id may be missing on older DBs.
+      let goalsData: GoalPreview[] | null = null;
+
+      const q1 = await supabase
         .from("goals")
-        .select("id, title, target_amount, current_amount, emoji")
-        .or(`created_by.eq.${userId},owner_id.eq.${userId}`)
-        .eq("is_completed", false)
+        .select("id, title, target_amount, current_amount, emoji, is_completed, created_by, owner_id")
+        .eq("created_by", userId)
         .order("created_at", { ascending: false })
-        .limit(3);
-      if (goalsData) setGoals(goalsData);
+        .limit(10);
+
+      if (!q1.error && q1.data) {
+        goalsData = q1.data as GoalPreview[];
+      } else {
+        // Fallback: or-filter including owner_id
+        const q2 = await supabase
+          .from("goals")
+          .select("id, title, target_amount, current_amount, emoji, is_completed")
+          .or(`created_by.eq.${userId},owner_id.eq.${userId}`)
+          .order("created_at", { ascending: false })
+          .limit(10);
+        if (!q2.error && q2.data) goalsData = q2.data as GoalPreview[];
+        else console.error("Goals load error", q1.error || q2.error);
+      }
+
+      const open = (goalsData || []).filter(
+        (g) => (g as { is_completed?: boolean }).is_completed !== true
+      );
+      setGoals(open.slice(0, 3));
     }
 
     async function load() {
