@@ -1,5 +1,5 @@
 /**
- * Notification helpers — Email (SMTP via nodemailer) + SMS (httpSMS)
+ * Notification helpers — Email (Resend preferred, else SMTP) + SMS (httpSMS)
  */
 
 export async function sendEmail({
@@ -11,20 +11,59 @@ export async function sendEmail({
   subject: string;
   html: string;
 }): Promise<{ success: boolean; error?: string }> {
+  const resendKey = process.env.RESEND_API_KEY;
+  const from =
+    process.env.SMTP_FROM ||
+    process.env.MAIL_FROM ||
+    process.env.RESEND_FROM ||
+    "GEEZ <onboarding@resend.dev>";
+
+  // Prefer Resend on Vercel (avoids Gmail 535 BadCredentials)
+  if (resendKey) {
+    try {
+      const res = await fetch("https://api.resend.com/emails", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${resendKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          from,
+          to: [to],
+          subject,
+          html,
+        }),
+      });
+      if (!res.ok) {
+        const text = await res.text();
+        console.error("[Email] Resend error", text);
+        return { success: false, error: text.slice(0, 200) };
+      }
+      return { success: true };
+    } catch (err) {
+      console.error("[Email] Resend exception", err);
+      return {
+        success: false,
+        error: err instanceof Error ? err.message : "Resend failed",
+      };
+    }
+  }
+
   const host = process.env.SMTP_HOST;
   const port = Number(process.env.SMTP_PORT || 587);
   const user = process.env.SMTP_USER;
-  const pass = process.env.SMTP_PASS;
-  const from =
-    process.env.SMTP_FROM || user || "noreply@geez.app";
+  const pass = (process.env.SMTP_PASS || "").replace(/\s/g, "");
 
   if (!host || !user || !pass) {
-    console.error("[Email] SMTP not configured", { host: !!host, user: !!user });
-    return { success: false, error: "SMTP not configured" };
+    console.error("[Email] No RESEND_API_KEY and SMTP not configured");
+    return {
+      success: false,
+      error:
+        "Email not configured. Set RESEND_API_KEY (recommended) or SMTP_* on Vercel.",
+    };
   }
 
   try {
-    // Dynamic import so build works if nodemailer types lag
     const nodemailer = await import("nodemailer");
     const transporter = nodemailer.createTransport({
       host,
@@ -34,14 +73,14 @@ export async function sendEmail({
     });
 
     await transporter.sendMail({
-      from,
+      from: process.env.SMTP_FROM || process.env.MAIL_FROM || user,
       to,
       subject,
       html,
     });
     return { success: true };
   } catch (err) {
-    console.error("[Email] send failed", err);
+    console.error("[Email] SMTP failed", err);
     return {
       success: false,
       error: err instanceof Error ? err.message : "Email failed",
@@ -57,7 +96,7 @@ export async function sendSMS({
   content: string;
 }): Promise<{ success: boolean }> {
   const apiKey = process.env.HTTPSMS_API_KEY;
-  const from = process.env.HTTPSMS_FROM_NUMBER;
+  const from = process.env.HTTPSMS_FROM_NUMBER || process.env.HTTPSMS_FROM;
 
   if (!apiKey || !from) {
     console.warn("httpSMS not configured");
