@@ -57,17 +57,34 @@ export default function DashboardPage() {
 
     async function refreshMoney() {
       if (!userId) return;
-      const { data: txs } = await supabase
-        .from("transactions")
-        .select("id, amount, depositor_id, depositor_name, status, created_at, note")
-        .eq("status", "success")
-        .order("created_at", { ascending: false });
 
       const { data: profile } = await supabase
         .from("profiles")
         .select("general_balance, dual_pair_id, account_type")
         .eq("id", userId)
         .single();
+
+      // Whose deposits count? Self only, or self + dual partner
+      let depositorIds: string[] = [userId];
+      if (profile?.dual_pair_id && profile?.account_type === "dual") {
+        const { data: pair } = await supabase
+          .from("dual_pairs")
+          .select("created_by, partner_id")
+          .eq("id", profile.dual_pair_id)
+          .maybeSingle();
+        if (pair) {
+          depositorIds = [pair.created_by, pair.partner_id].filter(
+            Boolean
+          ) as string[];
+        }
+      }
+
+      const { data: txs } = await supabase
+        .from("transactions")
+        .select("id, amount, depositor_id, depositor_name, status, created_at, note")
+        .eq("status", "success")
+        .in("depositor_id", depositorIds)
+        .order("created_at", { ascending: false });
 
       const { data: allGoals } = await supabase
         .from("goals")
@@ -91,7 +108,7 @@ export default function DashboardPage() {
         setSummary({
           total,
           yours,
-          partner: total - yours,
+          partner: Math.max(0, total - yours),
           general,
           goalsTotal,
           fixedTotal,
@@ -100,10 +117,14 @@ export default function DashboardPage() {
       } else {
         setSummary((prev) => ({
           ...prev,
+          total: 0,
+          yours: 0,
+          partner: 0,
           general,
           goalsTotal,
           fixedTotal,
         }));
+        setRecent([]);
       }
     }
 
@@ -211,7 +232,7 @@ export default function DashboardPage() {
         <div className="absolute -bottom-10 -left-6 h-28 w-28 rounded-full bg-black/10 blur-2xl" />
 
         <div className="relative">
-          <p className="text-sm font-medium opacity-90">Total Contributed</p>
+          <p className="text-sm font-medium opacity-90">Your total contributed</p>
           <h1 className="mt-1 text-4xl font-bold tracking-tight">
             {hidden ? "••••••" : formatMWK(summary.total)}
           </h1>

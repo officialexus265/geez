@@ -37,15 +37,46 @@ export default function HistoryPage() {
     async function load() {
       try {
         const supabase = createClient();
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+        if (!user) {
+          setLoading(false);
+          return;
+        }
+
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("dual_pair_id, account_type")
+          .eq("id", user.id)
+          .single();
+
+        let depositorIds: string[] = [user.id];
+        if (profile?.dual_pair_id && profile?.account_type === "dual") {
+          const { data: pair } = await supabase
+            .from("dual_pairs")
+            .select("created_by, partner_id")
+            .eq("id", profile.dual_pair_id)
+            .maybeSingle();
+          if (pair) {
+            depositorIds = [pair.created_by, pair.partner_id].filter(
+              Boolean
+            ) as string[];
+          }
+        }
 
         const { data: deposits } = await supabase
           .from("transactions")
-          .select("id, amount, status, depositor_name, note, created_at, tx_ref")
+          .select(
+            "id, amount, status, depositor_name, depositor_id, note, created_at, tx_ref"
+          )
+          .in("depositor_id", depositorIds)
           .order("created_at", { ascending: false });
 
         const { data: withdrawals } = await supabase
           .from("withdrawals")
           .select("id, amount, status, phone_number, created_at, initiated_by")
+          .eq("initiated_by", user.id)
           .order("created_at", { ascending: false });
 
         const mapped: TxItem[] = [];
